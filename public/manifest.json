@@ -1,0 +1,20 @@
+{
+  "id": "/",
+  "name": "Ynii Makeup - Sổ Lịch Makeup Thông Minh",
+  "short_name": "Ynii Makeup",
+  "description": "Quản lý lịch makeup, phân ca CTV, tính doanh thu và nhắc lịch chuông/rung.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#F2F2F7",
+  "theme_color": "#007AFF",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

@@ -1,0 +1,66 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --color-accent: #007AFF;
+    --color-accent-hover: #0062CC;
+    --color-accent-light: rgba(0, 122, 255, 0.12);
+    --color-accent-border: rgba(0, 122, 255, 0.25);
+  }
+
+  html, body {
+    height: 100%;
+    min-height: 100vh;
+    min-height: -webkit-fill-available;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    background-color: #FFFFFF;
+    overscroll-behavior: none;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+
+  html.dark, body.dark, .dark #root {
+    background-color: #1C1C1E;
+  }
+
+  #root {
+    height: 100%;
+    min-height: 100vh;
+    min-height: -webkit-fill-available;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    position: relative;
+    background-color: inherit;
+  }
+}
+
+/* Hide scrollbar for clean iOS feel */
+.no-scrollbar::-webkit-scrollbar {
+  display: none !important;
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none !important;
+  scrollbar-width: none !important;
+}
+
+/* Dedicated iOS-optimized scrollable container */
+.ios-scrollable {
+  overflow-y: auto !important;
+  -webkit-overflow-scrolling: touch !important;
+  overscroll-behavior-y: contain !important;
+  touch-action: pan-y !important;
+}
+
+/* Strict vertical-only touch panning */
+.touch-pan-y {
+  touch-action: pan-y !important;
+  -webkit-overflow-scrolling: touch;
+}

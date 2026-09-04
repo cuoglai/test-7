@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#007AFF"/>
+      <stop offset="100%" stop-color="#AF52DE"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="128" fill="url(#bgGrad)"/>
+  <!-- Sparkles & Mirror / Brush symbol -->
+  <g fill="none" stroke="#ffffff" stroke-width="28" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M170 342 L342 170"/>
+    <path d="M290 120 L392 222"/>
+    <circle cx="200" cy="200" r="60"/>
+    <path d="M380 380 L400 420 L420 380 L460 360 L420 340 L400 300 L380 340 L340 360 Z" fill="#ffffff" stroke-width="0"/>
+    <circle cx="130" cy="380" r="14" fill="#ffffff" stroke-width="0"/>
+  </g>
+</svg>

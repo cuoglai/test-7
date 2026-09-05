@@ -7,7 +7,6 @@ import {
   deleteDoc,
   updateDoc,
   onSnapshot,
-  writeBatch,
   getDocs
 } from 'firebase/firestore';
 import { Booking, BookingStatus } from '../types';
@@ -28,7 +27,7 @@ export const db = getFirestore(app);
 export const BOOKINGS_COLLECTION = 'bookings';
 
 // Helper: chuyển đổi doc Firestore sang đối tượng Booking chuẩn
-function docToBooking(id: string, data: Record<string, any>): Booking {
+export function docToBooking(id: string, data: Record<string, any>): Booking {
   return {
     id: id || data.id,
     customerId: data.customerId || undefined,
@@ -60,7 +59,9 @@ function docToBooking(id: string, data: Record<string, any>): Booking {
 }
 
 /**
- * Lắng nghe thay đổi dữ liệu thời gian thực (realtime) từ Firestore collection 'bookings'
+ * Lắng nghe thay đổi dữ liệu thời gian thực (Realtime Listener) từ Firestore collection 'bookings'.
+ * Dữ liệu hiển thị trên màn hình được lấy 100% từ kết quả trả về của Firestore.
+ * Bất kỳ máy nào thêm/sửa/xóa thì tất cả máy khác đều tự động cập nhật ngay lập tức.
  */
 export function subscribeToFirestoreBookings(
   onUpdate: (bookings: Booking[]) => void,
@@ -95,24 +96,60 @@ export function subscribeToFirestoreBookings(
 }
 
 /**
- * Lưu hoặc cập nhật lịch makeup lên Firestore theo thời gian thực
+ * Thêm lịch mới: Lưu từng lịch độc lập vào collection 'bookings'
+ * Sử dụng ID của lịch làm Document ID: doc(db, 'bookings', booking.id)
+ * CHỈ gọi setDoc cho đúng lịch vừa tạo, TUYỆT ĐỐI không ghi đè danh sách!
  */
-export async function saveBookingToFirestore(booking: Booking): Promise<void> {
+export async function addBookingToFirestore(booking: Booking): Promise<void> {
   try {
     const bookingRef = doc(db, BOOKINGS_COLLECTION, booking.id);
+    const now = Date.now();
     const payload = {
       ...booking,
-      updatedAt: Date.now()
+      createdAt: booking.createdAt || now,
+      updatedAt: now
     };
-    await setDoc(bookingRef, payload, { merge: true });
+    await setDoc(bookingRef, payload);
   } catch (err) {
-    console.error(`Lỗi khi lưu lịch ${booking.id} lên Firestore:`, err);
+    console.error(`Lỗi khi tạo lịch ${booking.id} lên Firestore:`, err);
     throw err;
   }
 }
 
 /**
- * Xóa lịch makeup khỏi Firestore theo thời gian thực
+ * Sửa lịch: CHỈ gọi updateDoc (hoặc setDoc với merge) cho đúng Document ID được sửa.
+ * Không động chạm đến bất kỳ lịch nào khác trong Firestore.
+ */
+export async function updateBookingInFirestore(
+  id: string,
+  updates: Partial<Booking>
+): Promise<void> {
+  try {
+    const bookingRef = doc(db, BOOKINGS_COLLECTION, id);
+    const payload = {
+      ...updates,
+      updatedAt: Date.now()
+    };
+    await setDoc(bookingRef, payload, { merge: true });
+  } catch (err) {
+    console.error(`Lỗi khi sửa lịch ${id} trên Firestore:`, err);
+    throw err;
+  }
+}
+
+/**
+ * Lưu lịch makeup độc lập: tự động nhận diện tạo mới (setDoc) hoặc chỉnh sửa (setDoc merge)
+ */
+export async function saveBookingToFirestore(booking: Booking, isNew: boolean = false): Promise<void> {
+  if (isNew) {
+    await addBookingToFirestore(booking);
+  } else {
+    await updateBookingInFirestore(booking.id, booking);
+  }
+}
+
+/**
+ * Xóa lịch: CHỈ gọi deleteDoc cho đúng lịch bị xóa.
  */
 export async function deleteBookingFromFirestore(id: string): Promise<void> {
   try {
@@ -125,7 +162,7 @@ export async function deleteBookingFromFirestore(id: string): Promise<void> {
 }
 
 /**
- * Cập nhật trạng thái lịch makeup trên Firestore theo thời gian thực
+ * Cập nhật trạng thái lịch makeup trên Firestore: CHỈ gọi updateDoc cho đúng Document ID
  */
 export async function updateBookingStatusInFirestore(
   id: string,
@@ -145,27 +182,6 @@ export async function updateBookingStatusInFirestore(
     await updateDoc(bookingRef, updates);
   } catch (err) {
     console.error(`Lỗi khi cập nhật trạng thái lịch ${id} trên Firestore:`, err);
-    throw err;
-  }
-}
-
-/**
- * Đồng bộ danh sách lịch từ máy lên Firestore (batch write)
- */
-export async function uploadBookingsToFirestore(bookings: Booking[]): Promise<number> {
-  if (!bookings || bookings.length === 0) return 0;
-  try {
-    const batch = writeBatch(db);
-    let count = 0;
-    for (const b of bookings) {
-      const bRef = doc(db, BOOKINGS_COLLECTION, b.id);
-      batch.set(bRef, { ...b, updatedAt: Date.now() }, { merge: true });
-      count++;
-    }
-    await batch.commit();
-    return count;
-  } catch (err) {
-    console.error('Lỗi khi tải danh sách lịch lên Firestore:', err);
     throw err;
   }
 }

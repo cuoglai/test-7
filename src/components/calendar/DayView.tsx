@@ -48,7 +48,7 @@ export const DayView: React.FC<DayViewProps> = ({
           style={{
             paddingBottom: 'calc(max(env(safe-area-inset-bottom, 0px), 12px) + 64px)'
           }}
-          className="min-h-full flex flex-col items-center justify-center p-6 text-center"
+          className="min-h-[calc(100%+50px)] flex flex-col items-center justify-center p-6 text-center"
         >
           <div className={`w-16 h-16 rounded-full ${emptyIconBg} flex items-center justify-center mb-3`}>
             <CalendarX className={`w-8 h-8 ${textSecondary}`} />
@@ -89,7 +89,7 @@ export const DayView: React.FC<DayViewProps> = ({
         style={{
           paddingBottom: 'calc(max(env(safe-area-inset-bottom, 0px), 12px) + 64px)'
         }}
-        className="space-y-2.5"
+        className="space-y-3 min-h-[calc(100%+50px)]"
       >
         {/* Subheader banner */}
         <div className="flex items-center justify-between px-1 pb-0.5">
@@ -106,7 +106,7 @@ export const DayView: React.FC<DayViewProps> = ({
           </button>
         </div>
 
-        <div className={`space-y-2 relative pl-2.5 before:absolute before:left-0.5 before:top-2 before:bottom-2 before:w-[2px] ${isDark ? 'before:bg-[#2C2C2E]' : 'before:bg-[#E5E5EA]'}`}>
+        <div className={`space-y-3.5 sm:space-y-4 relative pl-2.5 before:absolute before:left-0.5 before:top-2 before:bottom-2 before:w-[2px] ${isDark ? 'before:bg-[#2C2C2E]' : 'before:bg-[#E5E5EA]'}`}>
           {sortedBookings.map((booking) => {
             const conflicts = findCTVConflicts(allBookings, {
               id: booking.id,

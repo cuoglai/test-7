@@ -50,7 +50,6 @@ interface SettingsViewProps {
   onSelectBooking?: (booking: Booking) => void;
   firestoreStatus?: 'connected' | 'syncing' | 'error';
   firestoreError?: string | null;
-  onSyncAllToFirestore?: () => Promise<number>;
 }
 
 const REMINDER_OPTIONS: { value: ReminderOption; label: string }[] = [
@@ -95,8 +94,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   onDeleteCTV = () => {},
   onSelectBooking = () => {},
   firestoreStatus = 'connected',
-  firestoreError = null,
-  onSyncAllToFirestore
+  firestoreError = null
 }) => {
   const {
     theme,
@@ -111,7 +109,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
   const [defaultReminder, setReminderState] = useState<ReminderOption>(() => getDefaultReminder());
   const [subView, setSubView] = useState<'main' | 'ctv'>('main');
-  const [isSyncingCloud, setIsSyncingCloud] = useState(false);
 
   // Trạng thái thu gọn/mở rộng phần Tông màu chủ đạo (mặc định thu gọn)
   const [isColorExpanded, setIsColorExpanded] = useState(false);
@@ -831,35 +828,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 </span>
               </div>
 
-              {onSyncAllToFirestore && (
-                <button
-                  type="button"
-                  onClick={async () => {
-                    setIsSyncingCloud(true);
-                    try {
-                      const count = await onSyncAllToFirestore();
-                      setBackupNotice({
-                        type: 'success',
-                        message: `Đã đồng bộ thành công ${count} lịch makeup lên Firebase Firestore!`
-                      });
-                    } catch (err: any) {
-                      setBackupNotice({
-                        type: 'error',
-                        message: `Lỗi đồng bộ Firestore: ${err?.message || 'Không thể kết nối'}`
-                      });
-                    } finally {
-                      setIsSyncingCloud(false);
-                    }
-                  }}
-                  disabled={isSyncingCloud}
-                  className={`w-full h-9 px-3 rounded-xl border ${cardBorder} ${inputBg} ${textPrimary} text-[12px] font-bold flex items-center justify-center gap-2 transition-all cursor-pointer hover:opacity-85 active:scale-98 disabled:opacity-50`}
-                >
-                  <Cloud className="w-4 h-4" style={{ color: accentConfig.hex }} />
-                  <span>
-                    {isSyncingCloud ? 'Đang đồng bộ...' : 'Đồng bộ toàn bộ lịch lên Cloud'}
-                  </span>
-                </button>
-              )}
+              <p className={`text-[11.5px] ${textSecondary} leading-relaxed pt-0.5`}>
+                Đồng bộ từng lịch độc lập theo thời gian thực (Realtime). Bất kỳ máy nào tạo, sửa, xóa đều được cập nhật ngay lập tức mà không bao giờ ghi đè làm mất dữ liệu.
+              </p>
             </div>
 
             {/* 1. Sao lưu thiết bị */}

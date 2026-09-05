@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { Booking, CalendarMode } from '../../types';
 import { Header } from '../layout/Header';
 import { QuickStatsBar } from '../layout/QuickStatsBar';
@@ -31,23 +31,57 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   // 3 Bộ lọc: 'all' (Tất cả) | 'owner' (Tôi) | 'ctv' (CTV)
   const [filterType, setFilterType] = useState<'all' | 'owner' | 'ctv'>('all');
 
-  // Tiến trình thu gọn liên tục theo khoảng cách cuộn (0: mở rộng -> 1: thu gọn hoàn toàn)
-  const [scrollProgress, setScrollProgress] = useState(0);
+  // Trạng thái thu gọn/phóng ra tự động
+  // Tự động thu lại khi kéo lên vượt qua 50% giá trị thu vào (>= 30px)
+  // Phóng ra khi kéo lên xuống chạm đầu trang (<= 4px)
+  const [isCollapsed, setIsCollapsed] = useState(false);
 
-  // Khi chuyển ngày hoặc chế độ, reset tiến trình thu gọn về ban đầu (0)
+  // Khi đổi ngày hoặc chế độ xem, phóng ra lại trạng thái ban đầu
   useEffect(() => {
-    setScrollProgress(0);
+    setIsCollapsed(false);
   }, [currentDate, mode]);
 
-  // Khoảng cách vuốt cần thiết để thu gọn hoàn toàn header (70px)
-  const COLLAPSE_DISTANCE = 70;
+  // Ngưỡng 50% của hành động thu vào (30px)
+  const THRESHOLD_COLLAPSE = 30;
 
-  // Lắng nghe scroll để tính scrollProgress liên tục mượt mà theo từng pixel
+  // Xử lý scroll dứt khoát: không giật lag, không phụ thuộc nhiều/ít lịch
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
     const top = Math.max(0, e.currentTarget.scrollTop);
-    const progress = Math.min(1, Math.max(0, top / COLLAPSE_DISTANCE));
-    setScrollProgress(progress);
+    if (!isCollapsed && top >= THRESHOLD_COLLAPSE) {
+      setIsCollapsed(true);
+    } else if (isCollapsed && top <= 4) {
+      setIsCollapsed(false);
+    }
   };
+
+  // Cử chỉ chạm vuốt (Touch Swipe) trực tiếp:
+  // Đảm bảo hoạt động ổn định 100% trên thiết bị di động kể cả những ngày có 0 hoặc 1 lịch
+  const touchStartY = useRef<number | null>(null);
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    touchStartY.current = e.touches[0].clientY;
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (touchStartY.current === null) return;
+    const currentY = e.touches[0].clientY;
+    const deltaY = touchStartY.current - currentY; // > 0 là vuốt lên, < 0 là vuốt xuống
+
+    // Vuốt lên vượt qua ngưỡng 30px (50%) -> tự động thu gọn
+    if (deltaY > THRESHOLD_COLLAPSE && !isCollapsed) {
+      setIsCollapsed(true);
+    }
+    // Vuốt xuống khi ở đầu trang -> phóng ra
+    else if (deltaY < -THRESHOLD_COLLAPSE && isCollapsed) {
+      setIsCollapsed(false);
+    }
+  };
+
+  const handleTouchEnd = () => {
+    touchStartY.current = null;
+  };
+
+  const scrollProgress = isCollapsed ? 1 : 0;
 
   // Navigation helper
   const handlePrev = () => {
@@ -87,12 +121,12 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
       scopeBookings = bookings.filter((b) => b.date === currentDate && b.status !== 'cancelled');
       prefix = currentDate === todayDateStr ? 'Hôm nay' : 'Ngày';
     } else if (mode === 'week') {
-      // Find week start (Monday) and end (Sunday)
-      const current = parseDateString(currentDate);
-      const dayOfWeek = current.getDay();
-      const diffToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
-      const monday = new Date(current);
-      monday.setDate(current.getDate() + diffToMonday);
+      const d = parseDateString(currentDate);
+      const day = d.getDay();
+      const diffToMonday = day === 0 ? -6 : 1 - day;
+      const monday = new Date(d);
+      monday.setDate(d.getDate() + diffToMonday);
+
       const sunday = new Date(monday);
       sunday.setDate(monday.getDate() + 6);
 
@@ -104,12 +138,9 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
       );
       prefix = 'Tuần này';
     } else {
-      // Month
-      const currentMonthPrefix = currentDate.substring(0, 7); // YYYY-MM
-      scopeBookings = bookings.filter(
-        (b) => b.date.startsWith(currentMonthPrefix) && b.status !== 'cancelled'
-      );
-      prefix = 'Tháng';
+      const ym = currentDate.substring(0, 7);
+      scopeBookings = bookings.filter((b) => b.date.startsWith(ym) && b.status !== 'cancelled');
+      prefix = 'Tháng này';
     }
 
     const totalCount = scopeBookings.length;
@@ -117,17 +148,12 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
     const ctvCount = scopeBookings.filter((b) => b.performerType === 'ctv').length;
 
     return { totalCount, ownerCount, ctvCount, prefix };
-  }, [mode, currentDate, bookings, todayDateStr]);
+  }, [bookings, currentDate, mode, todayDateStr]);
 
-  // Danh sách bookings được lọc theo bộ lọc: Tất cả | Tôi | CTV
+  // Filter bookings for current day / view based on filterType
   const filteredBookings = useMemo(() => {
-    if (filterType === 'owner') {
-      return bookings.filter((b) => b.performerType === 'owner');
-    }
-    if (filterType === 'ctv') {
-      return bookings.filter((b) => b.performerType === 'ctv');
-    }
-    return bookings;
+    if (filterType === 'all') return bookings;
+    return bookings.filter((b) => b.performerType === filterType);
   }, [bookings, filterType]);
 
   const dayBookings = useMemo(() => {
@@ -135,8 +161,14 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   }, [filteredBookings, currentDate]);
 
   return (
-    <div id="calendar-view-root" className="flex-1 flex flex-col overflow-hidden">
-      {/* Top Header: Tên YNII MAKEUP dòng riêng, cụm Ngày Tháng Năm 1 dòng cân đối, tự động thu gọn liên tục khi vuốt */}
+    <div
+      id="calendar-view-container"
+      className="flex-1 flex flex-col h-full min-h-0 overflow-hidden"
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+    >
+      {/* Header: YNII MAKEUP + Ngày tháng + 4 nút thao tác nhỏ gọn, tự động thu gọn mượt mà */}
       <Header
         currentDate={currentDate}
         todayDateStr={todayDateStr}
@@ -148,10 +180,10 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
         onSelectDate={onDateChange}
         isToday={currentDate === todayDateStr}
         scrollProgress={scrollProgress}
-        isCollapsed={scrollProgress > 0.6}
+        isCollapsed={isCollapsed}
       />
 
-      {/* Quick Summary & Filter Bar: Tất cả / Tôi / CTV kiêm thống kê, thu gọn liên tục khi vuốt */}
+      {/* Quick Summary & Filter Bar: Tất cả / Tôi / CTV kiêm thống kê */}
       <QuickStatsBar
         totalCount={stats.totalCount}
         ownerCount={stats.ownerCount}
@@ -160,10 +192,10 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
         filterType={filterType}
         onFilterChange={setFilterType}
         scrollProgress={scrollProgress}
-        isCollapsed={scrollProgress > 0.6}
+        isCollapsed={isCollapsed}
       />
 
-      {/* Main View Area: truyền onScroll để kích hoạt hiệu ứng thu gọn mượt mà */}
+      {/* Main View Area */}
       {mode === 'day' && (
         <DayView
           date={currentDate}

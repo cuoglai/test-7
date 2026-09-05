@@ -28,7 +28,8 @@ import {
   Timer,
   Coins,
   Minus,
-  Plus
+  Plus,
+  Clipboard
 } from 'lucide-react';
 
 interface BookingFormModalProps {
@@ -171,6 +172,79 @@ export const BookingFormModal: React.FC<BookingFormModalProps> = ({
       if (parsed.date) {
         setDate(parsed.date);
       }
+    }
+  };
+
+  /**
+   * Nút 'Dán' thông minh:
+   * Lấy nội dung từ bộ nhớ tạm qua navigator.clipboard.readText()
+   * Logic dán nối tiếp thông minh:
+   * - Nếu ô nhập đang trống (hoặc con trỏ đang ở đầu dòng/dòng trống): Dán trực tiếp nội dung vào, không thêm khoảng trắng hay dòng thừa.
+   * - Nếu ô nhập đã có chữ và chưa xuống dòng: Tự động chèn thêm một dấu xuống dòng (\n) rồi mới dán tiếp nội dung vừa copy vào.
+   */
+  const handleSmartPaste = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    try {
+      if (!navigator.clipboard || !navigator.clipboard.readText) {
+        alert('Trình duyệt chưa hỗ trợ tự động đọc bộ nhớ tạm. Bạn có thể nhấn giữ vào ô nhập để Dán.');
+        return;
+      }
+
+      const clipboardText = await navigator.clipboard.readText();
+      if (!clipboardText) return;
+
+      const textarea = textareaRef.current;
+      let nextValue = '';
+      let newCursorPos = 0;
+
+      const isFocused = textarea && document.activeElement === textarea;
+      const currentVal = makeupInfo;
+
+      if (!currentVal || currentVal.trim() === '') {
+        // Ô nhập đang trống -> Dán trực tiếp nội dung vào, không thêm khoảng trắng hay dòng thừa
+        nextValue = clipboardText.trim();
+        newCursorPos = nextValue.length;
+      } else if (isFocused && textarea) {
+        const start = textarea.selectionStart ?? currentVal.length;
+        const end = textarea.selectionEnd ?? currentVal.length;
+        const before = currentVal.substring(0, start);
+        const after = currentVal.substring(end);
+
+        // Kiểm tra con trỏ có đang ở đầu dòng hoặc dòng trống
+        const isAtLineStart = start === 0 || before.endsWith('\n');
+
+        if (isAtLineStart) {
+          nextValue = before + clipboardText.trim() + after;
+          newCursorPos = before.length + clipboardText.trim().length;
+        } else {
+          // Ô nhập đã có chữ và chưa xuống dòng -> tự động chèn thêm \n
+          nextValue = before + '\n' + clipboardText.trim() + after;
+          newCursorPos = before.length + 1 + clipboardText.trim().length;
+        }
+      } else {
+        // Textarea không focus (thao tác bấm nút trực tiếp trên điện thoại hoặc desktop)
+        if (currentVal.endsWith('\n')) {
+          nextValue = currentVal + clipboardText.trim();
+        } else {
+          nextValue = currentVal + '\n' + clipboardText.trim();
+        }
+        newCursorPos = nextValue.length;
+      }
+
+      handleMakeupInfoChange(nextValue);
+
+      setTimeout(() => {
+        if (textareaRef.current) {
+          textareaRef.current.focus();
+          textareaRef.current.setSelectionRange(newCursorPos, newCursorPos);
+          adjustTextareaHeight();
+        }
+      }, 30);
+    } catch (err: any) {
+      console.warn('Lỗi khi đọc clipboard:', err);
+      alert('Không thể đọc bộ nhớ tạm. Bạn có thể nhấn giữ vào ô để Dán.');
     }
   };
 
@@ -434,18 +508,36 @@ export const BookingFormModal: React.FC<BookingFormModalProps> = ({
               </label>
             </div>
 
-            <textarea
-              ref={textareaRef}
-              id="booking-input-makeup-info"
-              rows={3}
-              value={makeupInfo}
-              onChange={(e) => handleMakeupInfoChange(e.target.value)}
-              placeholder=""
-              className={`w-full p-2.5 rounded-xl ${inputBg} border border-transparent focus:outline-none text-[14.5px] ${textPrimary} leading-relaxed min-h-[90px] resize-none overflow-hidden`}
-              style={{
-                borderColor: errors.makeupInfo ? '#FF3B30' : undefined
-              }}
-            />
+            <div className="relative">
+              <textarea
+                ref={textareaRef}
+                id="booking-input-makeup-info"
+                rows={3}
+                value={makeupInfo}
+                onChange={(e) => handleMakeupInfoChange(e.target.value)}
+                placeholder=""
+                className={`w-full p-2.5 pb-8 rounded-xl ${inputBg} border border-transparent focus:outline-none text-[14.5px] ${textPrimary} leading-relaxed min-h-[90px] resize-none overflow-hidden`}
+                style={{
+                  borderColor: errors.makeupInfo ? '#FF3B30' : undefined
+                }}
+              />
+              {/* Nút 'Dán' thông minh ở góc dưới bên phải bên trong khung nhập nội dung */}
+              <button
+                type="button"
+                id="btn-smart-paste-makeup-info"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={handleSmartPaste}
+                title="Dán từ bộ nhớ tạm"
+                className={`absolute right-2 bottom-2 h-6 px-2.5 rounded-md border text-[11px] font-bold flex items-center gap-1 shadow-2xs transition-all cursor-pointer active:scale-95 z-10 select-none touch-manipulation ${
+                  isDark
+                    ? 'bg-[#3A3A3C] hover:bg-[#48484A] border-[#48484A] text-white'
+                    : 'bg-white hover:bg-[#F2F2F7] border-[#D1D1D6] text-[#1C1C1E]'
+                }`}
+              >
+                <Clipboard className="w-3 h-3" style={{ color: accentConfig.hex }} />
+                <span>Dán</span>
+              </button>
+            </div>
             {detectedPhone && (
               <div className="flex items-center gap-1.5 text-[11px] text-[#34C759] font-semibold bg-[#34C759]/10 px-2 py-0.5 rounded-md w-fit">
                 <Check className="w-3 h-3 stroke-[2.5]" />

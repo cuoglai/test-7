@@ -45,35 +45,29 @@ export function initStorage(): void {
     safeSet(STORAGE_KEYS.CUSTOMERS, INITIAL_CUSTOMERS);
   }
   if (!localStorage.getItem(STORAGE_KEYS.BOOKINGS)) {
-    safeSet(STORAGE_KEYS.BOOKINGS, INITIAL_BOOKINGS);
-  } else {
-    // Migration: nếu chưa có ca nào đánh dấu completed, đồng bộ lại trạng thái từ INITIAL_BOOKINGS
-    const existing = safeGet<Booking[]>(STORAGE_KEYS.BOOKINGS, []);
-    const hasCompleted = existing.some(b => b.status === 'completed');
-    if (!hasCompleted && existing.some(b => b.id === 'b-01')) {
-      const updated = existing.map(b => {
-        const init = INITIAL_BOOKINGS.find(ib => ib.id === b.id);
-        if (init && init.status === 'completed') {
-          return { ...b, status: 'completed' as BookingStatus };
-        }
-        return b;
-      });
-      safeSet(STORAGE_KEYS.BOOKINGS, updated);
-    }
+    safeSet(STORAGE_KEYS.BOOKINGS, []);
   }
   if (!localStorage.getItem(STORAGE_KEYS.DEFAULT_REMINDER)) {
-    safeSet<ReminderOption>(STORAGE_KEYS.DEFAULT_REMINDER, '3_hours');
+    safeSet<ReminderOption>(STORAGE_KEYS.DEFAULT_REMINDER, '30_mins');
   }
 }
 
 // Bookings
-export function getBookings(): Booking[] {
+export function getCachedBookings(): Booking[] {
   initStorage();
-  const list = safeGet<Booking[]>(STORAGE_KEYS.BOOKINGS, INITIAL_BOOKINGS);
+  const list = safeGet<Booking[]>(STORAGE_KEYS.BOOKINGS, []);
   return list.sort((a, b) => {
     if (a.date !== b.date) return a.date.localeCompare(b.date);
     return a.startTime.localeCompare(b.startTime);
   });
+}
+
+export function cacheBookingsLocally(list: Booking[]): void {
+  safeSet(STORAGE_KEYS.BOOKINGS, list);
+}
+
+export function getBookings(): Booking[] {
+  return getCachedBookings();
 }
 
 export function saveBooking(booking: Booking): Booking {
@@ -181,7 +175,7 @@ export function findCustomerByPhone(phone: string): Customer | undefined {
   return customers.find(c => c.phone.replace(/\s+/g, '') === cleanPhone);
 }
 
-function upsertCustomerFromBooking(booking: Booking): void {
+export function upsertCustomerFromBooking(booking: Booking): void {
   const customers = getCustomers();
   const cleanPhone = booking.customerPhone.replace(/\s+/g, '');
   const existing = customers.find(c => c.phone.replace(/\s+/g, '') === cleanPhone);

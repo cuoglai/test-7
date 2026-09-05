@@ -1,37 +1,62 @@
 import React from 'react';
 import { Booking } from '../../types';
-import { getReminderLabel, getBookingDisplayTitle, getBookingMakeupInfo, getStatusBadgeInfo, formatKCurrency } from '../../utils/formatters';
-import { Phone, User, Clock, AlertTriangle, Bell } from 'lucide-react';
+import { getStatusInfo, getReminderLabel, formatKCurrency, formatBookingCardDate } from '../../utils/formatters';
+import { Bell, AlertTriangle, Phone, User, Calendar } from 'lucide-react';
 import { useTheme } from '../../contexts/ThemeContext';
 
 interface BookingCardProps {
   booking: Booking;
   hasConflict?: boolean;
   onSelect: (booking: Booking) => void;
+  showDate?: boolean;
 }
 
-export const BookingCard: React.FC<BookingCardProps> = ({ booking, hasConflict, onSelect }) => {
+export const BookingCard: React.FC<BookingCardProps> = ({
+  booking,
+  hasConflict = false,
+  onSelect,
+  showDate = false
+}) => {
   const { isDark, accentConfig } = useTheme();
-  const statusInfo = getStatusBadgeInfo(booking.status);
-  const displayTitle = getBookingDisplayTitle(booking);
-  const fullInfo = getBookingMakeupInfo(booking);
+  const statusInfo = getStatusInfo(booking.status);
+  const cardDate = showDate ? formatBookingCardDate(booking.date) : null;
 
-  // Get a clean 1-line snippet of the makeup details
+  // Display title: [Khách] - [Gói make]
+  const displayTitle = `${booking.customerName} - ${booking.packageNameSnapshot || 'Gói Makeup'}`;
+
+  // Information preview snippet
+  const fullInfo = [
+    booking.customerAddress || '',
+    booking.note || ''
+  ].filter(Boolean).join(' – ');
+
   const infoSnippet = booking.makeupInfo
     ? booking.makeupInfo.replace(/\n+/g, ' – ')
     : fullInfo;
 
-  // Visual accent border
+  const isCompleted = booking.status === 'completed' || booking.status === 'paid';
+
+  // Visual accent left border
   let borderLeftColor = 'border-l-4 ';
   if (hasConflict) {
     borderLeftColor += 'border-[#FF3B30]';
+  } else if (isCompleted) {
+    borderLeftColor += 'border-[#34C759]';
   } else if (booking.performerType === 'ctv') {
     borderLeftColor += 'border-[#5856D6]';
-  } else if (booking.status === 'paid' || booking.status === 'completed') {
-    borderLeftColor += 'border-[#34C759]';
   } else {
     borderLeftColor += 'border-[#FF9500]';
   }
+
+  // Thống nhất màu của bóng viền các ô thông tin:
+  // Bóng viền xanh lá là đã hoàn thành, màu xám là chưa hoàn thành
+  const borderShadowClasses = isCompleted
+    ? isDark
+      ? 'border-[#34C759]/70 shadow-[0_2px_12px_rgba(52,199,89,0.22)] ring-1 ring-[#34C759]/30'
+      : 'border-[#34C759] shadow-[0_2px_10px_rgba(52,199,89,0.20)] ring-1 ring-[#34C759]/35'
+    : isDark
+      ? 'border-[#38383A] shadow-[0_2px_8px_rgba(0,0,0,0.35)]'
+      : 'border-[#D1D1D6] shadow-[0_2px_8px_rgba(0,0,0,0.06)]';
 
   const handlePhoneClick = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -41,7 +66,6 @@ export const BookingCard: React.FC<BookingCardProps> = ({ booking, hasConflict, 
   };
 
   const cardBg = isDark ? 'bg-[#1C1C1E]' : 'bg-white';
-  const cardBorder = isDark ? 'border-[#2C2C2E]' : 'border-[#E5E5EA]';
   const textPrimary = isDark ? 'text-white' : 'text-[#1C1C1E]';
   const textBody = isDark ? 'text-[#D1D1D6]' : 'text-[#3A3A3C]';
   const textMuted = isDark ? 'text-[#8E8E93]' : 'text-[#8E8E93]';
@@ -53,7 +77,7 @@ export const BookingCard: React.FC<BookingCardProps> = ({ booking, hasConflict, 
       onClick={() => onSelect(booking)}
       className="flex items-start gap-1.5 sm:gap-2 cursor-pointer group transition-all"
     >
-      {/* Time column: [Giờ] - Kéo sang gần trục timeline và thẻ hơn */}
+      {/* Cột thời gian: Giờ bắt đầu / Giờ kết thúc */}
       <div className="w-10 sm:w-11 text-right pt-1.5 shrink-0 select-none">
         <p className={`text-[13px] sm:text-[13.5px] font-black ${textPrimary} leading-tight`}>{booking.startTime}</p>
         {booking.endTime && (
@@ -61,11 +85,11 @@ export const BookingCard: React.FC<BookingCardProps> = ({ booking, hasConflict, 
         )}
       </div>
 
-      {/* Card Body: Mở rộng sang bên trái, thu gọn chiều cao cho các ô gần nhau hơn */}
+      {/* Card Body: Bóng viền thống nhất (xanh lá đã hoàn thành / xám chưa hoàn thành) */}
       <div
-        className={`flex-1 min-w-0 ${cardBg} px-3 py-2 rounded-xl shadow-2xs border ${cardBorder} ${borderLeftColor} hover:shadow-xs active:scale-[0.99] transition-all`}
+        className={`flex-1 min-w-0 ${cardBg} px-3 py-2 rounded-xl border ${borderShadowClasses} ${borderLeftColor} hover:opacity-95 active:scale-[0.99] transition-all`}
       >
-        {/* Top row: [Thông tin nhận diện ngắn] & Badges */}
+        {/* Hàng trên: Tiêu đề + Giá tiền + Trạng thái */}
         <div className="flex justify-between items-center gap-1.5 mb-0.5">
           <h3 className={`font-bold text-[14.5px] sm:text-[15px] ${textPrimary} leading-snug truncate`}>
             {displayTitle}
@@ -88,14 +112,23 @@ export const BookingCard: React.FC<BookingCardProps> = ({ booking, hasConflict, 
           </div>
         </div>
 
-        {/* Short info preview from "Thông tin lịch make" */}
+        {/* Thông tin ngắn / Ghi chú */}
         <p className={`text-[12px] sm:text-[12.5px] ${textBody} my-1 line-clamp-1 font-normal leading-tight`}>
           {infoSnippet}
         </p>
 
-        {/* Minimum required metadata: Người make & Thông báo */}
+        {/* Metadata dưới cùng: Ngày (nếu trong tab Booking) + Người thực hiện + Nhắc nhở + Nút gọi dài ngang dễ bấm */}
         <div className={`pt-1.5 border-t ${isDark ? 'border-[#2C2C2E]' : 'border-[#F2F2F7]'} flex items-center justify-between gap-1.5 text-[11px]`}>
           <div className="flex items-center gap-2.5 flex-wrap">
+            {/* Định dạng ngày CHỈ TRÊN CÁC THẺ trong tab Booking: Thứ (In đậm), Ngày & Tháng (Font thường) */}
+            {cardDate && (
+              <span className={`inline-flex items-center gap-1 ${textPrimary}`}>
+                <Calendar className="w-3 h-3 text-[#FF9500]" />
+                <strong className="font-bold">{cardDate.dayOfWeek}</strong>
+                <span className="font-normal">{cardDate.dayMonth}</span>
+              </span>
+            )}
+
             {/* Người make: Tôi / CTV */}
             <span className={`inline-flex items-center gap-1 font-medium ${textPrimary}`}>
               <User className={`w-3 h-3 ${textMuted}`} />
@@ -107,7 +140,7 @@ export const BookingCard: React.FC<BookingCardProps> = ({ booking, hasConflict, 
               </span>
             </span>
 
-            {/* Thông báo: 30 phút trước */}
+            {/* Thông báo nhắc nhở */}
             <span className={`inline-flex items-center gap-1 ${textMuted}`}>
               <Bell className="w-3 h-3 text-[#FF9500]" />
               <span>Báo:</span>
@@ -117,17 +150,17 @@ export const BookingCard: React.FC<BookingCardProps> = ({ booking, hasConflict, 
             </span>
           </div>
 
-          {/* Quick Call if phone exists */}
+          {/* Nút gọi điện dài về chiều ngang hơn để người dùng bấm vào cực kỳ dễ dàng */}
           {booking.customerPhone && (
             <button
               id={`call-btn-${booking.id}`}
               type="button"
               onClick={handlePhoneClick}
               title={`Gọi ${booking.customerPhone}`}
-              style={{ color: accentConfig.hex }}
-              className={`w-6 h-6 rounded-full ${btnCallBg} flex items-center justify-center hover:opacity-80 active:scale-95 transition-all cursor-pointer shrink-0`}
+              className={`h-7 px-3 rounded-full ${btnCallBg} border ${isDark ? 'border-[#38383A]' : 'border-[#D1D1D6]'} flex items-center gap-1.5 hover:opacity-85 active:scale-95 transition-all cursor-pointer shrink-0 font-bold text-[11px] shadow-2xs`}
             >
-              <Phone className="w-3 h-3" />
+              <Phone className="w-3.5 h-3.5" style={{ color: accentConfig.hex }} />
+              <span className={textPrimary}>Gọi</span>
             </button>
           )}
         </div>

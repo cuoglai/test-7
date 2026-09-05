@@ -4,6 +4,7 @@ import { BookingCard } from './BookingCard';
 import { Search, X, ClipboardList } from 'lucide-react';
 import { findCTVConflicts } from '../../services/conflictService';
 import { useTheme, hexToRgba } from '../../contexts/ThemeContext';
+import { formatBookingCardDate } from '../../utils/formatters';
 
 interface BookingListViewProps {
   bookings: Booking[];
@@ -357,7 +358,7 @@ export const BookingListView: React.FC<BookingListViewProps> = ({
           style={{
             paddingBottom: 'calc(max(env(safe-area-inset-bottom, 0px), 12px) + 64px)'
           }}
-          className="space-y-3"
+          className="space-y-4 sm:space-y-5"
         >
         {filteredBookings.length === 0 ? (
           <div className="py-16 text-center">
@@ -386,10 +387,7 @@ export const BookingListView: React.FC<BookingListViewProps> = ({
               ? hexToRgba(accentConfig.hex, 0.40)
               : hexToRgba(accentConfig.hex, 0.18);
 
-            const [yearStr, monthStr, dayStr] = group.date.split('-');
-            const dateObj = new Date(Number(yearStr), Number(monthStr) - 1, Number(dayStr));
-            const daysOfWeek = ['Chủ nhật', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7'];
-            const dayOfWeek = !isNaN(dateObj.getTime()) ? daysOfWeek[dateObj.getDay()] : '';
+            const cardDate = formatBookingCardDate(group.date);
             const isToday = group.date === todayStr;
 
             return (
@@ -402,18 +400,12 @@ export const BookingListView: React.FC<BookingListViewProps> = ({
                 }}
                 className="p-3 sm:p-3.5 rounded-2xl border shadow-2xs space-y-2.5 transition-all"
               >
-                {/* Header hiển thị ngày dạng ngày-tháng-năm với ngày tháng to hơn năm */}
+                {/* Header hiển thị ngày: Thứ (In đậm) Ngày & Tháng (Font chữ thường), Bỏ năm */}
                 <div className="flex items-center justify-between px-1">
-                  <div className="flex items-baseline gap-1 flex-wrap">
-                    <span className={`text-[19px] sm:text-[20px] font-black ${textPrimary} tracking-tight leading-none`}>
-                      {dayStr}-{monthStr}
-                    </span>
-                    <span className={`text-[12px] font-semibold ${textSecondary} opacity-75`}>
-                      -{yearStr}
-                    </span>
-                    <span className="mx-1 text-[11px] opacity-30">•</span>
-                    <span className={`text-[13px] font-bold ${textPrimary}`}>
-                      {dayOfWeek}
+                  <div className="flex items-baseline gap-1.5 flex-wrap">
+                    <span className={`text-[16px] sm:text-[17px] ${textPrimary} tracking-tight leading-none`}>
+                      <span className="font-bold">{cardDate.dayOfWeek}</span>{' '}
+                      <span className="font-normal">{cardDate.dayMonth}</span>
                     </span>
                     {isToday && (
                       <span
@@ -437,7 +429,7 @@ export const BookingListView: React.FC<BookingListViewProps> = ({
                 </div>
 
                 {/* Danh sách các ca makeup trong ngày */}
-                <div className="space-y-2">
+                <div className="space-y-3.5 sm:space-y-4">
                   {group.bookings.map((booking) => {
                     const conflicts = findCTVConflicts(bookings, {
                       id: booking.id,
@@ -454,6 +446,7 @@ export const BookingListView: React.FC<BookingListViewProps> = ({
                         booking={booking}
                         hasConflict={conflicts.length > 0}
                         onSelect={onSelectBooking}
+                        showDate={true}
                       />
                     );
                   })}

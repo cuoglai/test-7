@@ -1,77 +1,63 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Booking, CTV, MakeupPackage, Customer, BookingStatus } from '../types';
 import {
-  getBookings,
+  getCachedBookings,
+  cacheBookingsLocally,
   getCTVs,
   getPackages,
   getCustomers,
-  saveBooking as saveBookingLocal,
-  deleteBooking as deleteBookingLocal,
-  updateBookingStatus as updateBookingStatusLocal,
   savePackage,
   deletePackage,
   saveCTV,
   deleteCTV,
   resetDemoData,
-  saveBookingsBatch
+  upsertCustomerFromBooking
 } from '../services/storageService';
 import {
   subscribeToFirestoreBookings,
-  saveBookingToFirestore,
+  addBookingToFirestore,
+  updateBookingInFirestore,
   deleteBookingFromFirestore,
-  updateBookingStatusInFirestore,
-  uploadBookingsToFirestore
+  updateBookingStatusInFirestore
 } from '../services/firebase';
 
 export function useAppData() {
-  const [bookings, setBookings] = useState<Booking[]>(() => getBookings());
+  // Khởi tạo danh sách lịch: bắt đầu từ bộ nhớ đệm offline,
+  // sau đó được thay thế 100% bằng Firestore Realtime snapshot ngay khi kết nối.
+  // TUYỆT ĐỐI KHÔNG lấy mảng này đẩy đè lên Firestore!
+  const [bookings, setBookings] = useState<Booking[]>(() => getCachedBookings());
   const [ctvs, setCtvs] = useState<CTV[]>(() => getCTVs());
   const [packages, setPackages] = useState<MakeupPackage[]>(() => getPackages());
   const [customers, setCustomers] = useState<Customer[]>(() => getCustomers());
   const [firestoreStatus, setFirestoreStatus] = useState<'connected' | 'syncing' | 'error'>('connecting' as any);
   const [firestoreError, setFirestoreError] = useState<string | null>(null);
 
-  // Đánh dấu đã nhận dữ liệu từ Firestore lần đầu
-  const hasReceivedFirestoreFirstSnapshot = useRef(false);
-
   const refreshAll = useCallback(() => {
-    setBookings(getBookings());
     setCtvs(getCTVs());
     setPackages(getPackages());
     setCustomers(getCustomers());
   }, []);
 
-  // 1. Lắng nghe thay đổi thời gian thực (Realtime) từ Firebase Firestore
+  // 1. Lắng nghe thay đổi thời gian thực (Realtime Listener) từ Firebase Firestore:
+  // Danh sách hiển thị trên màn hình PHẢI được lấy 100% từ kết quả trả về của Firestore.
+  // Bất kỳ máy nào (Máy A, Máy B, máy tính) tạo/sửa/xóa đều tự động cập nhật tức thì.
   useEffect(() => {
     const unsubscribe = subscribeToFirestoreBookings(
       (firestoreBookings) => {
         setFirestoreStatus('connected');
         setFirestoreError(null);
 
-        if (firestoreBookings.length > 0) {
-          // Cập nhật state trực tiếp từ Firestore realtime
-          setBookings(firestoreBookings);
-          // Lưu vào bộ nhớ đệm LocalStorage để mở app siêu nhanh
-          saveBookingsBatch(firestoreBookings);
-          hasReceivedFirestoreFirstSnapshot.current = true;
-        } else {
-          // Nếu Firestore collection 'bookings' còn trống
-          if (!hasReceivedFirestoreFirstSnapshot.current) {
-            hasReceivedFirestoreFirstSnapshot.current = true;
-            const currentLocal = getBookings();
-            if (currentLocal.length > 0) {
-              // Tự động đồng bộ các lịch mẫu / lịch hiện có lên Firestore
-              uploadBookingsToFirestore(currentLocal).catch((e) => {
-                console.warn('Không thể tự động đồng bộ lịch mẫu lên Firestore:', e);
-              });
-            }
-          }
-        }
+        // Cập nhật state trực tiếp từ Firestore realtime
+        setBookings(firestoreBookings);
+
+        // Lưu vào bộ nhớ đệm LocalStorage thuần túy chỉ để đọc khi mất mạng/mở app nhanh
+        // TUYỆT ĐỐI không bao giờ lấy cache này để đẩy đè lên Firestore!
+        cacheBookingsLocally(firestoreBookings);
       },
       (error) => {
         setFirestoreStatus('error');
         setFirestoreError(error.message || 'Lỗi kết nối Firestore');
-        console.warn('Lỗi kết nối Firebase Firestore, chuyển sang bộ nhớ cục bộ:', error);
+        console.warn('Lỗi Firestore:', error);
       }
     );
 
@@ -80,7 +66,7 @@ export function useAppData() {
     };
   }, []);
 
-  // Lắng nghe sự kiện lưu trữ nội bộ
+  // Lắng nghe sự kiện lưu trữ nội bộ (gói make, ctv)
   useEffect(() => {
     const handleStorageChange = () => {
       refreshAll();
@@ -91,40 +77,83 @@ export function useAppData() {
     };
   }, [refreshAll]);
 
-  // Tạo mới hoặc cập nhật lịch makeup -> Lưu Firestore trực tiếp + cập nhật tức thì
+  // Thêm mới hoặc Sửa lịch: Lưu từng lịch ĐỘC LẬP vào Document riêng
+  // Khi thêm lịch mới: Chỉ gọi setDoc cho đúng Document ID vừa tạo
+  // Khi sửa lịch: Chỉ gọi updateDoc / setDoc(merge) cho đúng Document ID được sửa
   const handleSaveBooking = useCallback(async (booking: Booking) => {
-    // 1. Cập nhật ngay lập tức vào bộ nhớ cục bộ và giao diện
-    const saved = saveBookingLocal(booking);
-    setBookings(getBookings());
+    const isExisting = bookings.some((b) => b.id === booking.id);
+    const now = Date.now();
 
-    // 2. Cập nhật trực tiếp lên Firestore theo thời gian thực (realtime)
+    const normalizedBooking: Booking = {
+      ...booking,
+      createdAt: booking.createdAt || now,
+      updatedAt: now
+    };
+
+    // 1. Cập nhật lạc quan (Optimistic update) trên giao diện máy hiện tại
+    setBookings((prev) => {
+      const idx = prev.findIndex((b) => b.id === booking.id);
+      if (idx >= 0) {
+        const next = [...prev];
+        next[idx] = normalizedBooking;
+        return next;
+      }
+      return [...prev, normalizedBooking].sort((a, b) => {
+        if (a.date !== b.date) return a.date.localeCompare(b.date);
+        return a.startTime.localeCompare(b.startTime);
+      });
+    });
+
+    // 2. Gửi đúng Document này lên Firestore theo chuẩn độc lập
     try {
-      await saveBookingToFirestore(saved);
+      if (isExisting) {
+        await updateBookingInFirestore(normalizedBooking.id, normalizedBooking);
+      } else {
+        await addBookingToFirestore(normalizedBooking);
+      }
     } catch (err) {
-      console.error('Không thể đồng bộ lịch lên Firestore:', err);
+      console.error(`Lỗi khi lưu lịch ${booking.id} lên Firestore:`, err);
     }
-    return saved;
-  }, []);
 
-  // Xóa lịch makeup -> Xóa Firestore trực tiếp + cập nhật tức thì
+    // Tự động lưu khách hàng nếu có
+    if (booking.customerPhone && booking.customerName) {
+      upsertCustomerFromBooking(normalizedBooking);
+    }
+
+    return normalizedBooking;
+  }, [bookings]);
+
+  // Xóa lịch: Chỉ gọi deleteDoc cho đúng lịch bị xóa
   const handleDeleteBooking = useCallback(async (id: string) => {
-    // 1. Cập nhật giao diện và bộ nhớ cục bộ
-    deleteBookingLocal(id);
-    setBookings(getBookings());
+    // 1. Cập nhật lạc quan trên giao diện
+    setBookings((prev) => prev.filter((b) => b.id !== id));
 
-    // 2. Xóa trên Firestore theo thời gian thực
+    // 2. Gọi deleteDoc trên Firestore
     try {
       await deleteBookingFromFirestore(id);
     } catch (err) {
-      console.error('Không thể xóa lịch khỏi Firestore:', err);
+      console.error(`Lỗi khi xóa lịch ${id} khỏi Firestore:`, err);
     }
   }, []);
 
-  // Đổi trạng thái lịch (pending, confirmed, completed, paid, cancelled)
+  // Đổi trạng thái lịch: Chỉ cập nhật đúng Document đó
   const handleStatusChange = useCallback(async (id: string, status: BookingStatus) => {
-    updateBookingStatusLocal(id, status);
-    setBookings(getBookings());
+    // 1. Cập nhật lạc quan trên giao diện
+    setBookings((prev) =>
+      prev.map((b) => {
+        if (b.id === id) {
+          return {
+            ...b,
+            status,
+            remainingAmount: status === 'paid' ? 0 : b.remainingAmount,
+            updatedAt: Date.now()
+          };
+        }
+        return b;
+      })
+    );
 
+    // 2. Cập nhật lên Firestore
     try {
       const extra: Partial<Booking> = {};
       if (status === 'paid') {
@@ -132,22 +161,7 @@ export function useAppData() {
       }
       await updateBookingStatusInFirestore(id, status, extra);
     } catch (err) {
-      console.error('Không thể cập nhật trạng thái lịch trên Firestore:', err);
-    }
-  }, []);
-
-  // Đồng bộ toàn bộ dữ liệu từ máy lên Firestore
-  const handleSyncAllToFirestore = useCallback(async () => {
-    const current = getBookings();
-    setFirestoreStatus('syncing');
-    try {
-      const count = await uploadBookingsToFirestore(current);
-      setFirestoreStatus('connected');
-      return count;
-    } catch (err: any) {
-      setFirestoreStatus('error');
-      setFirestoreError(err?.message || 'Đồng bộ thất bại');
-      throw err;
+      console.error(`Lỗi khi cập nhật trạng thái lịch ${id} trên Firestore:`, err);
     }
   }, []);
 
@@ -186,7 +200,6 @@ export function useAppData() {
     saveBooking: handleSaveBooking,
     deleteBooking: handleDeleteBooking,
     updateBookingStatus: handleStatusChange,
-    syncAllToFirestore: handleSyncAllToFirestore,
     savePackage: handleSavePackage,
     deletePackage: handleDeletePackage,
     saveCTV: handleSaveCTV,

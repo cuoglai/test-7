@@ -188,7 +188,7 @@ export const WeekView: React.FC<WeekViewProps> = ({
           style={{
             paddingBottom: 'calc(max(env(safe-area-inset-bottom, 0px), 12px) + 64px)'
           }}
-          className="space-y-2.5"
+          className="space-y-3 min-h-[calc(100%+50px)]"
         >
           <div className="flex items-center justify-between px-1">
             <span className={`text-[11px] font-bold uppercase tracking-widest ${textSecondary}`}>
@@ -217,7 +217,7 @@ export const WeekView: React.FC<WeekViewProps> = ({
               </button>
             </div>
           ) : (
-            <div className={`space-y-2 relative pl-2.5 before:absolute before:left-0.5 before:top-2 before:bottom-2 before:w-[2px] ${isDark ? 'before:bg-[#2C2C2E]' : 'before:bg-[#E5E5EA]'}`}>
+            <div className={`space-y-3.5 sm:space-y-4 relative pl-2.5 before:absolute before:left-0.5 before:top-2 before:bottom-2 before:w-[2px] ${isDark ? 'before:bg-[#2C2C2E]' : 'before:bg-[#E5E5EA]'}`}>
               {dayBookings.map((booking) => {
                 const conflicts = findCTVConflicts(allBookings, {
                   id: booking.id,

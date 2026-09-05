@@ -176,6 +176,40 @@ export function getStatusBadgeInfo(status: BookingStatus): {
   }
 }
 
+export const getStatusInfo = getStatusBadgeInfo;
+
+/**
+ * Định dạng ngày CHỈ TRÊN CÁC THẺ trong tab Booking:
+ * Thứ (In đậm): Thứ 2, Thứ 3, Thứ 4, Thứ 5, Thứ 6, Thứ 7; riêng Chủ Nhật hiển thị là CN.
+ * Ngày & Tháng (Font chữ thường): Dạng [ngày] thg [tháng]
+ * Bỏ năm: Không hiển thị năm.
+ * Ví dụ mẫu: Thứ 2 8 thg 5, CN 13 thg 9
+ */
+export function formatBookingCardDate(dateStr: string): {
+  dayOfWeek: string;
+  dayMonth: string;
+  fullText: string;
+} {
+  if (!dateStr) {
+    return { dayOfWeek: '', dayMonth: '', fullText: '' };
+  }
+  const parts = dateStr.split('-').map(Number);
+  if (parts.length < 3 || isNaN(parts[0]) || isNaN(parts[1]) || isNaN(parts[2])) {
+    return { dayOfWeek: '', dayMonth: dateStr, fullText: dateStr };
+  }
+  const [year, month, day] = parts;
+  const dateObj = new Date(year, month - 1, day);
+  const dayIndex = dateObj.getDay(); // 0 = CN, 1 = Thứ 2, ..., 6 = Thứ 7
+  const dayNames = ['CN', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7'];
+  const dayOfWeek = dayNames[dayIndex] || '';
+  const dayMonth = `${day} thg ${month}`;
+  return {
+    dayOfWeek,
+    dayMonth,
+    fullText: `${dayOfWeek} ${dayMonth}`
+  };
+}
+
 /**
  * Trích xuất và chuẩn hóa số điện thoại Việt Nam từ văn bản tự do.
  * Nhận diện chính xác cả khi số bị phân tách thành cụm 3-4 số, ví dụ:

@@ -22,7 +22,6 @@ function AppContent() {
     saveBooking,
     deleteBooking,
     updateBookingStatus,
-    syncAllToFirestore,
     saveCTV,
     deleteCTV,
     resetDemoData
@@ -171,7 +170,6 @@ function AppContent() {
               onSelectBooking={(b) => setSelectedBooking(b)}
               firestoreStatus={firestoreStatus}
               firestoreError={firestoreError}
-              onSyncAllToFirestore={syncAllToFirestore}
             />
           )}
         </main>

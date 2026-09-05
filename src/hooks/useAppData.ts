@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Booking, CTV, MakeupPackage, Customer, BookingStatus } from '../types';
 import {
   getCachedBookings,
@@ -34,6 +34,12 @@ export function useAppData() {
   const [customers, setCustomers] = useState<Customer[]>(() => getCustomers());
   const [firestoreStatus, setFirestoreStatus] = useState<'connected' | 'syncing' | 'error'>('connecting' as any);
   const [firestoreError, setFirestoreError] = useState<string | null>(null);
+
+  // Ref giữ danh sách booking mới nhất để truy xuất đồng bộ mà không cần phụ thuộc vào dependency array
+  const bookingsRef = useRef<Booking[]>(bookings);
+  useEffect(() => {
+    bookingsRef.current = bookings;
+  }, [bookings]);
 
   const refreshAll = useCallback(() => {
     setPackages(getPackages());
@@ -109,22 +115,31 @@ export function useAppData() {
     // 1. Cập nhật lạc quan (Optimistic update) trên giao diện máy hiện tại để phản hồi tức thì
     setBookings((prev) => {
       const idx = prev.findIndex((b) => b.id === booking.id);
+      let next: Booking[];
       if (idx >= 0) {
-        const next = [...prev];
+        next = [...prev];
         next[idx] = normalizedBooking;
-        return next;
+      } else {
+        next = [...prev, normalizedBooking];
       }
-      return [...prev, normalizedBooking].sort((a, b) => {
+      next.sort((a, b) => {
         if (a.date !== b.date) return a.date.localeCompare(b.date);
         return a.startTime.localeCompare(b.startTime);
       });
+      cacheBookingsLocally(next);
+      return next;
     });
 
     // 2. Gửi đúng Document này lên Firestore: setDoc(doc(db, 'bookings', item.id), item, { merge: true })
     try {
+      setFirestoreStatus('syncing');
       await saveBookingToFirestore(normalizedBooking);
-    } catch (err) {
+      setFirestoreStatus('connected');
+      setFirestoreError(null);
+    } catch (err: any) {
       console.error(`Lỗi khi lưu lịch ${booking.id} lên Firestore:`, err);
+      setFirestoreStatus('error');
+      setFirestoreError(err?.message || 'Không thể đồng bộ lên Cloud');
     }
 
     // Tự động lưu khách hàng nếu có
@@ -137,43 +152,74 @@ export function useAppData() {
 
   // Xóa lịch: Chỉ gọi deleteDoc(doc(db, 'bookings', item.id)) cho đúng lịch bị xóa
   const handleDeleteBooking = useCallback(async (id: string) => {
-    // 1. Cập nhật lạc quan trên giao diện
-    setBookings((prev) => prev.filter((b) => b.id !== id));
+    // 1. Cập nhật lạc quan trên giao diện và cache
+    setBookings((prev) => {
+      const next = prev.filter((b) => b.id !== id);
+      cacheBookingsLocally(next);
+      return next;
+    });
 
     // 2. Gọi deleteDoc trên Firestore
     try {
+      setFirestoreStatus('syncing');
       await deleteBookingFromFirestore(id);
-    } catch (err) {
+      setFirestoreStatus('connected');
+      setFirestoreError(null);
+    } catch (err: any) {
       console.error(`Lỗi khi xóa lịch ${id} khỏi Firestore:`, err);
+      setFirestoreStatus('error');
+      setFirestoreError(err?.message || 'Lỗi xóa lịch trên Cloud');
     }
   }, []);
 
   // Đổi trạng thái lịch: Chỉ cập nhật đúng Document đó trên Firestore
   const handleStatusChange = useCallback(async (id: string, status: BookingStatus) => {
-    // 1. Cập nhật lạc quan trên giao diện
-    setBookings((prev) =>
-      prev.map((b) => {
+    const now = Date.now();
+    const target = bookingsRef.current.find((b) => b.id === id);
+
+    // 1. Cập nhật lạc quan trên giao diện và cache
+    setBookings((prev) => {
+      const next = prev.map((b) => {
         if (b.id === id) {
           return {
             ...b,
             status,
             remainingAmount: status === 'paid' ? 0 : b.remainingAmount,
-            updatedAt: Date.now()
+            updatedAt: now
           };
         }
         return b;
-      })
-    );
+      });
+      cacheBookingsLocally(next);
+      return next;
+    });
 
-    // 2. Cập nhật lên Firestore
+    // 2. Cập nhật lên Firestore an toàn
     try {
-      const extra: Partial<Booking> = {};
-      if (status === 'paid') {
-        extra.remainingAmount = 0;
+      setFirestoreStatus('syncing');
+      if (target) {
+        // Lưu lại toàn bộ document đã cập nhật trạng thái
+        // Đảm bảo không bao giờ bị tình trạng mất các trường date/customerName
+        const fullUpdated: Booking = {
+          ...target,
+          status,
+          remainingAmount: status === 'paid' ? 0 : target.remainingAmount,
+          updatedAt: now
+        };
+        await saveBookingToFirestore(fullUpdated);
+      } else {
+        const extra: Partial<Booking> = {};
+        if (status === 'paid') {
+          extra.remainingAmount = 0;
+        }
+        await updateBookingStatusInFirestore(id, status, extra);
       }
-      await updateBookingStatusInFirestore(id, status, extra);
-    } catch (err) {
+      setFirestoreStatus('connected');
+      setFirestoreError(null);
+    } catch (err: any) {
       console.error(`Lỗi khi cập nhật trạng thái lịch ${id} trên Firestore:`, err);
+      setFirestoreStatus('error');
+      setFirestoreError(err?.message || 'Lỗi cập nhật trạng thái trên Cloud');
     }
   }, []);
 

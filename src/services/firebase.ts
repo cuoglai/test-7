@@ -28,23 +28,40 @@ export const db = getFirestore(app);
 export const BOOKINGS_COLLECTION = 'bookings';
 export const CTVS_COLLECTION = 'ctvs';
 
+// Helper: làm sạch dữ liệu trước khi gửi lên Firebase Firestore
+// Firestore v9+ TUYỆT ĐỐI KHÔNG CHẤP NHẬN giá trị `undefined`
+// Nếu có bất kỳ trường nào là undefined, setDoc/updateDoc sẽ lập tức ném lỗi và hủy toàn bộ thao tác lưu.
+export function sanitizeForFirestore<T extends Record<string, any>>(obj: T): Record<string, any> {
+  const result: Record<string, any> = {};
+  for (const [key, val] of Object.entries(obj)) {
+    if (val !== undefined) {
+      if (val !== null && typeof val === 'object' && !Array.isArray(val) && !(val instanceof Date)) {
+        result[key] = sanitizeForFirestore(val);
+      } else {
+        result[key] = val;
+      }
+    }
+  }
+  return result;
+}
+
 // Helper: chuyển đổi doc Firestore sang đối tượng Booking chuẩn
 export function docToBooking(id: string, data: Record<string, any>): Booking {
   return {
     id: id || data.id,
     customerId: data.customerId || undefined,
-    customerName: data.customerName || '',
+    customerName: data.customerName || 'Khách make',
     customerPhone: data.customerPhone || '',
     customerAddress: data.customerAddress || data.address || '',
     date: data.date || '',
-    startTime: data.startTime || '',
+    startTime: data.startTime || '08:00',
     endTime: data.endTime || '',
     quantity: typeof data.quantity === 'number' ? data.quantity : 1,
     makeupInfo: data.makeupInfo || '',
     packageId: data.packageId || undefined,
     packageNameSnapshot: data.packageNameSnapshot || data.serviceType || 'Gói Makeup',
     packagePrice: typeof data.packagePrice === 'number' ? data.packagePrice : (typeof data.totalAmount === 'number' ? data.totalAmount : 0),
-    price: typeof data.price === 'number' ? data.price : undefined,
+    price: typeof data.price === 'number' ? data.price : (typeof data.totalAmount === 'number' ? data.totalAmount : 350000),
     deposit: typeof data.deposit === 'number' ? data.deposit : 0,
     surcharge: typeof data.surcharge === 'number' ? data.surcharge : 0,
     totalAmount: typeof data.totalAmount === 'number' ? data.totalAmount : 0,
@@ -88,6 +105,11 @@ export function subscribeToFirestoreBookings(
       const list: Booking[] = [];
       snapshot.forEach((d) => {
         const data = d.data();
+        // Bỏ qua nếu là document rác không có ngày và không có tên khách
+        if (!data.date && !data.customerName && !data.makeupInfo) {
+          console.warn(`[Firestore] Bỏ qua document không hợp lệ: id=${d.id}`);
+          return;
+        }
         list.push(docToBooking(d.id, data));
       });
 
@@ -145,19 +167,47 @@ export function subscribeToFirestoreCTVs(
  * Tạo / Sửa lịch makeup:
  * Lưu từng bản ghi độc lập: setDoc(doc(db, 'bookings', item.id), item, { merge: true })
  * CHỈ gọi setDoc cho đúng lịch đó, TUYỆT ĐỐI KHÔNG ghi đè toàn bộ collection.
+ * Tự động làm sạch giá trị `undefined` để Firebase không bị lỗi.
  */
 export async function saveBookingToFirestore(booking: Booking): Promise<void> {
   try {
     const bookingRef = doc(db, BOOKINGS_COLLECTION, booking.id);
     const now = Date.now();
-    const payload = {
-      ...booking,
+    const rawPayload: Record<string, any> = {
+      id: booking.id,
+      customerName: booking.customerName || 'Khách make',
+      customerPhone: booking.customerPhone || '',
+      customerAddress: booking.customerAddress || '',
+      date: booking.date || '',
+      startTime: booking.startTime || '08:00',
+      endTime: booking.endTime || '',
+      quantity: typeof booking.quantity === 'number' ? booking.quantity : 1,
+      makeupInfo: booking.makeupInfo || '',
+      packageNameSnapshot: booking.packageNameSnapshot || 'Gói Makeup',
+      packagePrice: typeof booking.packagePrice === 'number' ? booking.packagePrice : 0,
+      price: typeof booking.price === 'number' ? booking.price : (booking.totalAmount || 0),
+      deposit: typeof booking.deposit === 'number' ? booking.deposit : 0,
+      surcharge: typeof booking.surcharge === 'number' ? booking.surcharge : 0,
+      totalAmount: typeof booking.totalAmount === 'number' ? booking.totalAmount : 0,
+      remainingAmount: typeof booking.remainingAmount === 'number' ? booking.remainingAmount : 0,
+      performerType: booking.performerType === 'ctv' ? 'ctv' : 'owner',
+      note: booking.note || '',
+      reminder: booking.reminder || '30_mins',
+      status: booking.status || 'deposited',
       createdAt: booking.createdAt || now,
       updatedAt: now
     };
+
+    if (booking.customerId) rawPayload.customerId = booking.customerId;
+    if (booking.packageId) rawPayload.packageId = booking.packageId;
+    if (booking.ctvId) rawPayload.ctvId = booking.ctvId;
+    if (booking.ctvNameSnapshot) rawPayload.ctvNameSnapshot = booking.ctvNameSnapshot;
+
+    const payload = sanitizeForFirestore(rawPayload);
     await setDoc(bookingRef, payload, { merge: true });
+    console.log(`[Firestore] Đã lưu lịch ${booking.id} (${booking.customerName}) lên Cloud`);
   } catch (err) {
-    console.error(`Lỗi khi lưu lịch ${booking.id} lên Firestore:`, err);
+    console.error(`[Firestore] Lỗi khi lưu lịch ${booking.id} lên Cloud:`, err);
     throw err;
   }
 }
@@ -170,13 +220,14 @@ export async function updateBookingInFirestore(
 ): Promise<void> {
   try {
     const bookingRef = doc(db, BOOKINGS_COLLECTION, id);
-    const payload = {
+    const payload = sanitizeForFirestore({
       ...updates,
       updatedAt: Date.now()
-    };
+    });
     await setDoc(bookingRef, payload, { merge: true });
+    console.log(`[Firestore] Đã sửa lịch ${id} trên Cloud`);
   } catch (err) {
-    console.error(`Lỗi khi sửa lịch ${id} trên Firestore:`, err);
+    console.error(`[Firestore] Lỗi khi sửa lịch ${id} trên Cloud:`, err);
     throw err;
   }
 }
@@ -188,8 +239,9 @@ export async function deleteBookingFromFirestore(id: string): Promise<void> {
   try {
     const bookingRef = doc(db, BOOKINGS_COLLECTION, id);
     await deleteDoc(bookingRef);
+    console.log(`[Firestore] Đã xóa lịch ${id} khỏi Cloud`);
   } catch (err) {
-    console.error(`Lỗi khi xóa lịch ${id} khỏi Firestore:`, err);
+    console.error(`[Firestore] Lỗi khi xóa lịch ${id} khỏi Cloud:`, err);
     throw err;
   }
 }
@@ -212,9 +264,11 @@ export async function updateBookingStatusInFirestore(
     if (status === 'paid' && extraUpdates.remainingAmount === undefined) {
       updates.remainingAmount = 0;
     }
-    await setDoc(bookingRef, updates, { merge: true });
+    const payload = sanitizeForFirestore(updates);
+    await setDoc(bookingRef, payload, { merge: true });
+    console.log(`[Firestore] Đã cập nhật trạng thái lịch ${id} -> ${status} trên Cloud`);
   } catch (err) {
-    console.error(`Lỗi khi cập nhật trạng thái lịch ${id} trên Firestore:`, err);
+    console.error(`[Firestore] Lỗi khi cập nhật trạng thái lịch ${id} trên Cloud:`, err);
     throw err;
   }
 }
@@ -227,7 +281,7 @@ export async function updateBookingStatusInFirestore(
 export async function saveCTVToFirestore(ctv: CTV): Promise<void> {
   try {
     const ctvRef = doc(db, CTVS_COLLECTION, ctv.id);
-    const payload = {
+    const rawPayload: Record<string, any> = {
       id: ctv.id,
       name: ctv.name,
       phone: ctv.phone || '',
@@ -235,9 +289,11 @@ export async function saveCTVToFirestore(ctv: CTV): Promise<void> {
       active: typeof ctv.active === 'boolean' ? ctv.active : true,
       updatedAt: Date.now()
     };
+    const payload = sanitizeForFirestore(rawPayload);
     await setDoc(ctvRef, payload, { merge: true });
+    console.log(`[Firestore] Đã lưu CTV ${ctv.id} (${ctv.name}) lên Cloud`);
   } catch (err) {
-    console.error(`Lỗi khi lưu CTV ${ctv.id} lên Firestore:`, err);
+    console.error(`[Firestore] Lỗi khi lưu CTV ${ctv.id} lên Cloud:`, err);
     throw err;
   }
 }
@@ -249,8 +305,9 @@ export async function deleteCTVFromFirestore(id: string): Promise<void> {
   try {
     const ctvRef = doc(db, CTVS_COLLECTION, id);
     await deleteDoc(ctvRef);
+    console.log(`[Firestore] Đã xóa CTV ${id} khỏi Cloud`);
   } catch (err) {
-    console.error(`Lỗi khi xóa CTV ${id} khỏi Firestore:`, err);
+    console.error(`[Firestore] Lỗi khi xóa CTV ${id} khỏi Cloud:`, err);
     throw err;
   }
 }

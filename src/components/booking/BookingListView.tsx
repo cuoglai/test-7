@@ -129,22 +129,25 @@ export const BookingListView: React.FC<BookingListViewProps> = ({
     return null;
   }, [selectedMonthPrefix, groupedBookings, todayStr]);
 
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const targetGroupRef = useRef<HTMLDivElement | null>(null);
 
-  // Cuộn mượt đưa 'Ngày hôm nay' (hoặc lịch chưa diễn ra gần nhất) lên đầu màn hình
+  // Hiển thị ngay 'Ngày hôm nay' (hoặc ngày gần nhất) lên đầu màn hình mà không cuộn chạy animation
   useEffect(() => {
     if (!targetScrollDate) return;
 
-    const timer = setTimeout(() => {
+    const jumpToTarget = () => {
       if (targetGroupRef.current) {
         targetGroupRef.current.scrollIntoView({
-          behavior: 'smooth',
+          behavior: 'instant' as ScrollBehavior,
           block: 'start'
         });
       }
-    }, 150);
+    };
 
-    return () => clearTimeout(timer);
+    jumpToTarget();
+    const rId = requestAnimationFrame(jumpToTarget);
+    return () => cancelAnimationFrame(rId);
   }, [targetScrollDate]);
 
   const viewBg = isDark ? 'bg-[#000000]' : 'bg-[#F2F2F7]';
@@ -330,6 +333,7 @@ export const BookingListView: React.FC<BookingListViewProps> = ({
 
       {/* Bookings List */}
       <div
+        ref={scrollContainerRef}
         className="flex-1 overflow-y-auto ios-scrollable pt-3"
         style={{
           WebkitOverflowScrolling: 'touch',
@@ -370,16 +374,16 @@ export const BookingListView: React.FC<BookingListViewProps> = ({
             const isScrollTarget = group.date === targetScrollDate;
 
             // 2. Phân loại màu sắc thẻ:
-            // Lịch của các ngày đã qua: Không đổ màu nổi bật, nền xám nhạt trong mờ, viền mảnh
-            // Lịch từ hôm nay trở đi: Giữ nguyên màu nền và độ nổi bật chủ đạo
+            // Lịch các ngày đã qua: không đổ màu nền như các lịch sắp tới (để transparent), vẫn có viền đầy đủ
+            // Lịch từ hôm nay trở đi: đổ màu nền xen kẽ theo màu chủ đạo
             const containerBg = isPastDay
-              ? undefined
+              ? 'transparent'
               : isOdd
                 ? hexToRgba(accentConfig.hex, 0.30)
                 : hexToRgba(accentConfig.hex, 0.10);
 
             const containerBorder = isPastDay
-              ? undefined
+              ? isDark ? '#2C2C2E' : '#E5E5EA'
               : isOdd
                 ? hexToRgba(accentConfig.hex, 0.40)
                 : hexToRgba(accentConfig.hex, 0.18);
@@ -393,43 +397,32 @@ export const BookingListView: React.FC<BookingListViewProps> = ({
                   backgroundColor: containerBg,
                   borderColor: containerBorder
                 }}
-                className={`p-3 sm:p-3.5 rounded-2xl border transition-all space-y-2.5 ${
-                  isPastDay
-                    ? 'bg-slate-100/60 dark:bg-slate-900/30 border-slate-200 dark:border-slate-800 shadow-none'
-                    : 'shadow-2xs'
-                }`}
+                className="p-3 sm:p-3.5 rounded-2xl border transition-all space-y-2.5 shadow-2xs"
               >
                 {/* Header hiển thị ngày: Thứ (In đậm) Ngày & Tháng (Font chữ thường), Bỏ năm */}
                 <div className="flex items-center justify-between px-1">
                   <div className="flex items-center gap-2">
-                    <span
-                      className={`text-[16px] sm:text-[17px] tracking-tight leading-none ${
-                        isPastDay ? 'text-slate-500 dark:text-slate-400' : textPrimary
-                      }`}
-                    >
+                    <span className={`text-[16px] sm:text-[17px] tracking-tight leading-none ${textPrimary}`}>
                       <strong className="font-bold">{cardDate.dayOfWeek}</strong>{' '}
                       <span className="font-normal">{cardDate.dayMonth}</span>
                     </span>
                     {isToday && (
-                      <span className="px-2 py-0.5 rounded-full text-[10.5px] font-extrabold bg-[#FF3B30] text-white shadow-xs">
+                      <span
+                        style={{ backgroundColor: accentConfig.hex }}
+                        className="px-2 py-0.5 rounded-full text-[10.5px] font-extrabold text-white shadow-xs"
+                      >
                         HÔM NAY
                       </span>
                     )}
                   </div>
 
                   <span
-                    className={`px-2 py-0.5 rounded-lg text-[11px] font-bold ${
-                      isPastDay
-                        ? 'bg-slate-200/60 dark:bg-slate-800/60 text-slate-500 dark:text-slate-400 shadow-none'
-                        : 'shadow-2xs'
-                    }`}
+                    className="px-2 py-0.5 rounded-lg text-[11px] font-bold shadow-2xs"
                     style={{
-                      backgroundColor: isPastDay
-                        ? undefined
-                        : isDark
-                          ? 'rgba(0,0,0,0.35)'
-                          : 'rgba(255,255,255,0.85)',
-                      color: isPastDay ? undefined : textPrimary
+                      backgroundColor: isDark
+                        ? 'rgba(255,255,255,0.08)'
+                        : 'rgba(0,0,0,0.06)',
+                      color: textPrimary
                     }}
                   >
                     {group.bookings.length} ca

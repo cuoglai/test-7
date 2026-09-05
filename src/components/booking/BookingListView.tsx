@@ -1,7 +1,7 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { Booking } from '../../types';
 import { BookingCard } from './BookingCard';
-import { Search, X, ClipboardList } from 'lucide-react';
+import { Search, X, ClipboardList, ChevronLeft, ChevronRight } from 'lucide-react';
 import { findCTVConflicts } from '../../services/conflictService';
 import { useTheme, hexToRgba } from '../../contexts/ThemeContext';
 import { formatBookingCardDate } from '../../utils/formatters';
@@ -20,30 +20,63 @@ export const BookingListView: React.FC<BookingListViewProps> = ({
   const { isDark, accentConfig } = useTheme();
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState<'all' | 'owner' | 'ctv'>('all');
-  const [scrollProgress, setScrollProgress] = useState(0);
 
-  const COLLAPSE_DISTANCE = 70;
+  // 1. Thanh chuyển tháng: Mặc định chọn tháng hiện tại
+  const [currentYear, setCurrentYear] = useState<number>(() => new Date().getFullYear());
+  const [currentMonth, setCurrentMonth] = useState<number>(() => new Date().getMonth() + 1);
 
-  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
-    const top = Math.max(0, e.currentTarget.scrollTop);
-    const progress = Math.min(1, Math.max(0, top / COLLAPSE_DISTANCE));
-    setScrollProgress(progress);
+  const handlePrevMonth = () => {
+    if (currentMonth === 1) {
+      setCurrentMonth(12);
+      setCurrentYear((y) => y - 1);
+    } else {
+      setCurrentMonth((m) => m - 1);
+    }
   };
 
-  const p = scrollProgress;
+  const handleNextMonth = () => {
+    if (currentMonth === 12) {
+      setCurrentMonth(1);
+      setCurrentYear((y) => y + 1);
+    } else {
+      setCurrentMonth((m) => m + 1);
+    }
+  };
 
-  // Stats - 3 required indicators: Tổng số ca, Tôi, CTV
+  const handleGoCurrentMonth = () => {
+    const now = new Date();
+    setCurrentYear(now.getFullYear());
+    setCurrentMonth(now.getMonth() + 1);
+  };
+
+  const selectedMonthPrefix = `${currentYear}-${String(currentMonth).padStart(2, '0')}`;
+
+  const todayStr = useMemo(() => {
+    const d = new Date();
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  }, []);
+
+  // Lọc danh sách lịch hẹn trong tháng được chọn
+  const monthBookings = useMemo(() => {
+    return bookings.filter((b) => b.date && b.date.startsWith(selectedMonthPrefix));
+  }, [bookings, selectedMonthPrefix]);
+
+  // Stats - 3 chỉ số theo tháng được chọn: Tổng số ca, Tôi, CTV
   const stats = useMemo(() => {
-    const active = bookings.filter((b) => b.status !== 'cancelled');
+    const active = monthBookings.filter((b) => b.status !== 'cancelled');
     const totalCount = active.length;
     const ownerCount = active.filter((b) => b.performerType === 'owner').length;
     const ctvCount = active.filter((b) => b.performerType === 'ctv').length;
     return { totalCount, ownerCount, ctvCount };
-  }, [bookings]);
+  }, [monthBookings]);
 
+  // Lọc theo người làm & tìm kiếm trong tháng
   const filteredBookings = useMemo(() => {
     const term = searchTerm.toLowerCase().trim();
-    return bookings.filter((b) => {
+    return monthBookings.filter((b) => {
       // Filter by performer type
       if (filterType === 'owner' && b.performerType !== 'owner') return false;
       if (filterType === 'ctv' && b.performerType !== 'ctv') return false;
@@ -61,15 +94,7 @@ export const BookingListView: React.FC<BookingListViewProps> = ({
 
       return matchText;
     });
-  }, [bookings, searchTerm, filterType]);
-
-  const todayStr = useMemo(() => {
-    const d = new Date();
-    const y = d.getFullYear();
-    const m = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    return `${y}-${m}-${day}`;
-  }, []);
+  }, [monthBookings, searchTerm, filterType]);
 
   // Nhóm danh sách bookings theo ngày để phân chia khung màu xen kẽ
   const groupedBookings = useMemo(() => {
@@ -79,11 +104,48 @@ export const BookingListView: React.FC<BookingListViewProps> = ({
       list.push(b);
       map.set(b.date, list);
     });
-    return Array.from(map.entries()).map(([date, items]) => ({
+    const entries = Array.from(map.entries());
+    entries.sort(([a], [b]) => a.localeCompare(b));
+    return entries.map(([date, items]) => ({
       date,
-      bookings: items
+      bookings: items.sort((a, b) => a.startTime.localeCompare(b.startTime))
     }));
   }, [filteredBookings]);
+
+  // 3. Tự động xác định vị trí của lịch hẹn đầu tiên của ngày hôm nay (hoặc lịch hẹn chưa diễn ra gần nhất)
+  const targetScrollDate = useMemo(() => {
+    const now = new Date();
+    const thisMonthPrefix = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    if (selectedMonthPrefix !== thisMonthPrefix) return null;
+
+    // 1. Kiểm tra xem hôm nay có lịch không
+    const todayGroup = groupedBookings.find((g) => g.date === todayStr);
+    if (todayGroup) return todayStr;
+
+    // 2. Nếu hôm nay không có lịch, tìm ngày chưa diễn ra gần nhất trong tháng
+    const nextGroup = groupedBookings.find((g) => g.date > todayStr);
+    if (nextGroup) return nextGroup.date;
+
+    return null;
+  }, [selectedMonthPrefix, groupedBookings, todayStr]);
+
+  const targetGroupRef = useRef<HTMLDivElement | null>(null);
+
+  // Cuộn mượt đưa 'Ngày hôm nay' (hoặc lịch chưa diễn ra gần nhất) lên đầu màn hình
+  useEffect(() => {
+    if (!targetScrollDate) return;
+
+    const timer = setTimeout(() => {
+      if (targetGroupRef.current) {
+        targetGroupRef.current.scrollIntoView({
+          behavior: 'smooth',
+          block: 'start'
+        });
+      }
+    }, 150);
+
+    return () => clearTimeout(timer);
+  }, [targetScrollDate]);
 
   const viewBg = isDark ? 'bg-[#000000]' : 'bg-[#F2F2F7]';
   const cardBg = isDark ? 'bg-[#1C1C1E]' : 'bg-white';
@@ -94,259 +156,180 @@ export const BookingListView: React.FC<BookingListViewProps> = ({
 
   return (
     <div id="booking-list-root" className={`flex-1 flex flex-col overflow-hidden ${viewBg}`}>
-      {/* Header with Title, Stats & Filter, and Search - Tự động thu gọn liên tục khi vuốt */}
+      {/* Static Compact Header: Cố định trạng thái thu gọn tối giản, không co giãn khi cuộn */}
       <div
         className={`${cardBg} border-b ${cardBorder} shrink-0 select-none`}
         style={{
           paddingTop: 'max(env(safe-area-inset-top, 0px), 12px)',
-          paddingBottom: `${Math.round(11 - p * 3)}px`,
+          paddingBottom: '10px',
           paddingLeft: 'max(env(safe-area-inset-left, 0px), 16px)',
           paddingRight: 'max(env(safe-area-inset-right, 0px), 16px)'
         }}
       >
-        <div className="flex justify-between items-center mb-2.5">
-          <h2
-            style={{ fontSize: `${Math.round(19 - p * 3)}px` }}
-            className={`font-bold ${textPrimary} tracking-tight`}
-          >
-            Danh sách Booking
+        {/* Hàng 1: Single-line Header (Bên trái: 'Booking', Bên phải: Cụm chuyển tháng < Tháng MM/YYYY >) */}
+        <div className="flex items-center justify-between gap-2 mb-2">
+          <h2 className={`text-[18px] sm:text-[20px] font-bold ${textPrimary} tracking-tight`}>
+            Booking
           </h2>
-          <button
-            type="button"
-            onClick={onOpenAddBooking}
-            style={{ backgroundColor: accentConfig.hex }}
-            className="px-3 py-1 rounded-full text-white text-[12px] font-bold shadow-xs active:scale-95 transition-all cursor-pointer"
-          >
-            + Tạo lịch
-          </button>
+
+          {/* Cụm chuyển tháng < Tháng MM/YYYY > */}
+          <div className="flex items-center gap-1">
+            <button
+              id="booking-prev-month-btn"
+              type="button"
+              onClick={handlePrevMonth}
+              title="Tháng trước"
+              className={`w-7.5 h-7.5 rounded-full ${inputBg} flex items-center justify-center ${textPrimary} hover:opacity-80 active:scale-95 transition-all cursor-pointer border ${cardBorder}`}
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+
+            <button
+              id="booking-current-month-btn"
+              type="button"
+              onClick={handleGoCurrentMonth}
+              title="Về tháng hiện tại"
+              className={`text-[12px] font-bold px-2.5 h-7.5 rounded-full ${inputBg} ${textPrimary} hover:opacity-80 active:scale-95 transition-all cursor-pointer border ${cardBorder}`}
+            >
+              Tháng {String(currentMonth).padStart(2, '0')}/{currentYear}
+            </button>
+
+            <button
+              id="booking-next-month-btn"
+              type="button"
+              onClick={handleNextMonth}
+              title="Tháng sau"
+              className={`w-7.5 h-7.5 rounded-full ${inputBg} flex items-center justify-center ${textPrimary} hover:opacity-80 active:scale-95 transition-all cursor-pointer border ${cardBorder}`}
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
         </div>
 
-        {/* 3 Thống kê & Bộ lọc: Tổng số ca, Tôi, CTV - Tự động thu gọn mượt mà theo scrollProgress */}
-        <div
-          className="grid grid-cols-3 mb-2.5"
-          style={{ gap: `${Math.round(8 - p * 2)}px` }}
-        >
-          {/* 1. Tất cả */}
-          <button
-            type="button"
-            onClick={() => setFilterType('all')}
-            style={{
-              backgroundColor: filterType === 'all' ? accentConfig.hex : undefined,
-              borderColor: filterType === 'all' ? accentConfig.hex : undefined,
-              color: filterType === 'all' ? '#FFFFFF' : undefined,
-              paddingTop: `${Math.round(6 - p * 2.5)}px`,
-              paddingBottom: `${Math.round(6 - p * 2.5)}px`,
-              borderRadius: `${Math.round(12 - p * 2)}px`
-            }}
-            className={`px-2 text-center border cursor-pointer active:scale-[0.98] ${
-              filterType === 'all'
-                ? 'shadow-xs'
-                : `${isDark ? 'bg-[#2C2C2E] border-[#38383A]' : 'bg-[#F9F9F9] border-[#E5E5EA]'} ${textPrimary} hover:opacity-80`
+        {/* Hàng 2: Thanh bấm phân đoạn thu gọn (Segmented Pill Bar) - Tối ưu diện tích */}
+        <div className="mb-2">
+          <div
+            className={`flex items-center p-1 rounded-xl border ${cardBorder} ${
+              isDark ? 'bg-[#2C2C2E]' : 'bg-[#E5E5EA]/75'
             }`}
           >
-            <div className="flex flex-col items-center justify-center text-center">
-              <div
-                style={{
-                  height: `${Math.max(0, (1 - p) * 14)}px`,
-                  opacity: Math.max(0, 1 - p * 1.8),
-                  marginBottom: `${Math.max(0, (1 - p) * 2)}px`,
-                  overflow: 'hidden'
-                }}
-                className={`text-[10px] uppercase font-bold tracking-wider truncate ${
-                  filterType === 'all' ? 'text-white/80' : textSecondary
+            {/* Tất cả */}
+            <button
+              id="filter-all-btn"
+              type="button"
+              onClick={() => setFilterType('all')}
+              style={{
+                backgroundColor: filterType === 'all' ? accentConfig.hex : 'transparent',
+                color: filterType === 'all' ? '#FFFFFF' : undefined
+              }}
+              className={`flex-1 flex items-center justify-center gap-1.5 py-1 px-2 rounded-lg text-[12px] font-semibold transition-all cursor-pointer select-none active:scale-[0.98] ${
+                filterType === 'all'
+                  ? 'shadow-xs font-bold'
+                  : `${textSecondary} hover:${textPrimary}`
+              }`}
+            >
+              <span>Tất cả</span>
+              <span
+                className={`px-1.5 py-0.2 rounded-full text-[10.5px] font-bold leading-tight ${
+                  filterType === 'all'
+                    ? 'bg-white/25 text-white'
+                    : isDark
+                      ? 'bg-white/10 text-slate-300'
+                      : 'bg-black/8 text-slate-600'
                 }`}
               >
-                Tổng số ca
-              </div>
-              <div
-                style={{ fontSize: `${Math.round(15 - p * 2.5)}px` }}
-                className="font-extrabold leading-tight flex items-center justify-center"
-              >
-                <span
-                  style={{
-                    opacity: Math.min(1, Math.max(0, (p - 0.2) / 0.7)),
-                    maxWidth: `${p * 50}px`,
-                    overflow: 'hidden',
-                    whiteSpace: 'nowrap',
-                    marginRight: `${p * 4}px`
-                  }}
-                  className="text-[11px] font-bold"
-                >
-                  Tất cả
-                </span>
-                <span>{stats.totalCount}</span>
-                <span
-                  style={{
-                    opacity: Math.max(0, 1 - p * 1.8),
-                    maxWidth: `${(1 - p) * 18}px`,
-                    overflow: 'hidden',
-                    marginLeft: `${(1 - p) * 3}px`
-                  }}
-                  className={`text-[11px] font-normal ${filterType === 'all' ? 'text-white/80' : textSecondary}`}
-                >
-                  ca
-                </span>
-              </div>
-            </div>
-          </button>
+                {stats.totalCount}
+              </span>
+            </button>
 
-          {/* 2. Tôi */}
-          <button
-            type="button"
-            onClick={() => setFilterType('owner')}
-            style={{
-              backgroundColor: filterType === 'owner' ? accentConfig.hex : undefined,
-              borderColor: filterType === 'owner' ? accentConfig.hex : undefined,
-              color: filterType === 'owner' ? '#FFFFFF' : undefined,
-              paddingTop: `${Math.round(6 - p * 2.5)}px`,
-              paddingBottom: `${Math.round(6 - p * 2.5)}px`,
-              borderRadius: `${Math.round(12 - p * 2)}px`
-            }}
-            className={`px-2 text-center border cursor-pointer active:scale-[0.98] ${
-              filterType === 'owner'
-                ? 'shadow-xs'
-                : `${isDark ? 'bg-[#2C2C2E] border-[#38383A]' : 'bg-[#F9F9F9] border-[#E5E5EA]'} ${textPrimary} hover:opacity-80`
-            }`}
-          >
-            <div className="flex flex-col items-center justify-center text-center">
-              <div
-                style={{
-                  height: `${Math.max(0, (1 - p) * 14)}px`,
-                  opacity: Math.max(0, 1 - p * 1.8),
-                  marginBottom: `${Math.max(0, (1 - p) * 2)}px`,
-                  overflow: 'hidden'
-                }}
-                className={`text-[10px] uppercase font-bold tracking-wider truncate flex items-center justify-center gap-0.5 ${
-                  filterType === 'owner' ? 'text-white/80' : textSecondary
+            {/* Tôi */}
+            <button
+              id="filter-owner-btn"
+              type="button"
+              onClick={() => setFilterType('owner')}
+              style={{
+                backgroundColor: filterType === 'owner' ? accentConfig.hex : 'transparent',
+                color: filterType === 'owner' ? '#FFFFFF' : undefined
+              }}
+              className={`flex-1 flex items-center justify-center gap-1 py-1 px-2 rounded-lg text-[12px] font-semibold transition-all cursor-pointer select-none active:scale-[0.98] ${
+                filterType === 'owner'
+                  ? 'shadow-xs font-bold'
+                  : `${textSecondary} hover:${textPrimary}`
+              }`}
+            >
+              <span className="text-[11px]">👑</span>
+              <span>Tôi</span>
+              <span
+                className={`px-1.5 py-0.2 rounded-full text-[10.5px] font-bold leading-tight ${
+                  filterType === 'owner'
+                    ? 'bg-white/25 text-white'
+                    : isDark
+                      ? 'bg-white/10 text-slate-300'
+                      : 'bg-black/8 text-slate-600'
                 }`}
               >
-                <span>👑</span> Tôi
-              </div>
-              <div
-                style={{ fontSize: `${Math.round(15 - p * 2.5)}px` }}
-                className="font-extrabold leading-tight flex items-center justify-center"
-              >
-                <span
-                  style={{
-                    opacity: Math.min(1, Math.max(0, (p - 0.2) / 0.7)),
-                    maxWidth: `${p * 50}px`,
-                    overflow: 'hidden',
-                    whiteSpace: 'nowrap',
-                    marginRight: `${p * 4}px`
-                  }}
-                  className="text-[11px] font-bold"
-                >
-                  👑 Tôi
-                </span>
-                <span style={{ color: filterType === 'owner' ? '#FFFFFF' : accentConfig.hex }}>
-                  {stats.ownerCount}
-                </span>
-                <span
-                  style={{
-                    opacity: Math.max(0, 1 - p * 1.8),
-                    maxWidth: `${(1 - p) * 18}px`,
-                    overflow: 'hidden',
-                    marginLeft: `${(1 - p) * 3}px`
-                  }}
-                  className={`text-[11px] font-normal ${filterType === 'owner' ? 'text-white/80' : textSecondary}`}
-                >
-                  ca
-                </span>
-              </div>
-            </div>
-          </button>
+                {stats.ownerCount}
+              </span>
+            </button>
 
-          {/* 3. CTV */}
-          <button
-            type="button"
-            onClick={() => setFilterType('ctv')}
-            style={{
-              paddingTop: `${Math.round(6 - p * 2.5)}px`,
-              paddingBottom: `${Math.round(6 - p * 2.5)}px`,
-              borderRadius: `${Math.round(12 - p * 2)}px`
-            }}
-            className={`px-2 text-center border cursor-pointer active:scale-[0.98] ${
-              filterType === 'ctv'
-                ? 'bg-[#5856D6] text-white border-[#5856D6] shadow-xs'
-                : `${isDark ? 'bg-[#2C2C2E] border-[#38383A]' : 'bg-[#F9F9F9] border-[#E5E5EA]'} text-[#5856D6] hover:opacity-80`
-            }`}
-          >
-            <div className="flex flex-col items-center justify-center text-center">
-              <div
-                style={{
-                  height: `${Math.max(0, (1 - p) * 14)}px`,
-                  opacity: Math.max(0, 1 - p * 1.8),
-                  marginBottom: `${Math.max(0, (1 - p) * 2)}px`,
-                  overflow: 'hidden'
-                }}
-                className={`text-[10px] uppercase font-bold tracking-wider truncate flex items-center justify-center gap-0.5 ${
-                  filterType === 'ctv' ? 'text-white/80' : textSecondary
+            {/* CTV */}
+            <button
+              id="filter-ctv-btn"
+              type="button"
+              onClick={() => setFilterType('ctv')}
+              style={{
+                backgroundColor: filterType === 'ctv' ? '#5856D6' : 'transparent',
+                color: filterType === 'ctv' ? '#FFFFFF' : undefined
+              }}
+              className={`flex-1 flex items-center justify-center gap-1 py-1 px-2 rounded-lg text-[12px] font-semibold transition-all cursor-pointer select-none active:scale-[0.98] ${
+                filterType === 'ctv'
+                  ? 'shadow-xs font-bold'
+                  : `${textSecondary} hover:${textPrimary}`
+              }`}
+            >
+              <span className="text-[11px]">🤝</span>
+              <span>CTV</span>
+              <span
+                className={`px-1.5 py-0.2 rounded-full text-[10.5px] font-bold leading-tight ${
+                  filterType === 'ctv'
+                    ? 'bg-white/25 text-white'
+                    : isDark
+                      ? 'bg-white/10 text-slate-300'
+                      : 'bg-black/8 text-slate-600'
                 }`}
               >
-                <span>🤝</span> CTV
-              </div>
-              <div
-                style={{ fontSize: `${Math.round(15 - p * 2.5)}px` }}
-                className="font-extrabold leading-tight flex items-center justify-center"
-              >
-                <span
-                  style={{
-                    opacity: Math.min(1, Math.max(0, (p - 0.2) / 0.7)),
-                    maxWidth: `${p * 50}px`,
-                    overflow: 'hidden',
-                    whiteSpace: 'nowrap',
-                    marginRight: `${p * 4}px`
-                  }}
-                  className="text-[11px] font-bold"
-                >
-                  🤝 CTV
-                </span>
-                <span className={filterType === 'ctv' ? 'text-white' : 'text-[#5856D6]'}>
-                  {stats.ctvCount}
-                </span>
-                <span
-                  style={{
-                    opacity: Math.max(0, 1 - p * 1.8),
-                    maxWidth: `${(1 - p) * 18}px`,
-                    overflow: 'hidden',
-                    marginLeft: `${(1 - p) * 3}px`
-                  }}
-                  className={`text-[11px] font-normal ${filterType === 'ctv' ? 'text-white/80' : textSecondary}`}
-                >
-                  ca
-                </span>
-              </div>
-            </div>
-          </button>
+                {stats.ctvCount}
+              </span>
+            </button>
+          </div>
         </div>
 
-        {/* Search input */}
+        {/* Hàng 3: Ô tìm kiếm thu gọn - Đẩy sát lên */}
         <div className="relative">
-          <Search className={`w-4 h-4 ${textSecondary} absolute left-3.5 top-1/2 -translate-y-1/2`} />
+          <Search className={`w-3.5 h-3.5 ${textSecondary} absolute left-3 top-1/2 -translate-y-1/2`} />
           <input
             id="booking-search-input"
             type="text"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             placeholder="Tìm theo tên, SĐT, địa chỉ, ghi chú..."
-            className={`w-full h-9 rounded-xl ${inputBg} text-[13px] ${textPrimary} placeholder:${textSecondary} focus:outline-none focus:ring-1 focus:ring-[var(--color-accent)] border border-transparent pl-9 pr-9`}
+            className={`w-full h-8 rounded-xl ${inputBg} text-[12.5px] ${textPrimary} placeholder:${textSecondary} focus:outline-none focus:ring-1 focus:ring-[var(--color-accent)] border border-transparent pl-8.5 pr-8`}
           />
           {searchTerm && (
             <button
               id="clear-search-btn"
               type="button"
               onClick={() => setSearchTerm('')}
-              className={`absolute right-3 top-1/2 -translate-y-1/2 ${textSecondary} hover:${textPrimary}`}
+              className={`absolute right-2.5 top-1/2 -translate-y-1/2 ${textSecondary} hover:${textPrimary}`}
             >
-              <X className="w-4 h-4" />
+              <X className="w-3.5 h-3.5" />
             </button>
           )}
         </div>
       </div>
 
-      {/* Bookings List with min-h for smooth header collapse on any length */}
+      {/* Bookings List */}
       <div
-        onScroll={handleScroll}
         className="flex-1 overflow-y-auto ios-scrollable pt-3"
         style={{
           WebkitOverflowScrolling: 'touch',
@@ -363,9 +346,11 @@ export const BookingListView: React.FC<BookingListViewProps> = ({
         {filteredBookings.length === 0 ? (
           <div className="py-16 text-center">
             <ClipboardList className={`w-12 h-12 ${textSecondary} mx-auto mb-2 opacity-50`} />
-            <p className={`text-[15px] font-semibold ${textPrimary}`}>Không tìm thấy booking nào</p>
+            <p className={`text-[15px] font-semibold ${textPrimary}`}>
+              Không có booking nào trong tháng {String(currentMonth).padStart(2, '0')}/{currentYear}
+            </p>
             <p className={`text-[13px] ${textSecondary} mt-0.5`}>
-              Thử tìm kiếm với từ khóa khác hoặc tạo booking mới.
+              Thử tìm kiếm với từ khóa khác, đổi tháng hoặc tạo booking mới.
             </p>
             <button
               type="button"
@@ -379,49 +364,72 @@ export const BookingListView: React.FC<BookingListViewProps> = ({
         ) : (
           groupedBookings.map((group, groupIdx) => {
             const isOdd = groupIdx % 2 === 1;
-            // Đổ màu chủ đạo ở ngoài các khung ô lịch: xen kẽ 10% và 30% opacity
-            const containerBg = isOdd
-              ? hexToRgba(accentConfig.hex, 0.30)
-              : hexToRgba(accentConfig.hex, 0.10);
-            const containerBorder = isOdd
-              ? hexToRgba(accentConfig.hex, 0.40)
-              : hexToRgba(accentConfig.hex, 0.18);
-
             const cardDate = formatBookingCardDate(group.date);
             const isToday = group.date === todayStr;
+            const isPastDay = group.date < todayStr;
+            const isScrollTarget = group.date === targetScrollDate;
+
+            // 2. Phân loại màu sắc thẻ:
+            // Lịch của các ngày đã qua: Không đổ màu nổi bật, nền xám nhạt trong mờ, viền mảnh
+            // Lịch từ hôm nay trở đi: Giữ nguyên màu nền và độ nổi bật chủ đạo
+            const containerBg = isPastDay
+              ? undefined
+              : isOdd
+                ? hexToRgba(accentConfig.hex, 0.30)
+                : hexToRgba(accentConfig.hex, 0.10);
+
+            const containerBorder = isPastDay
+              ? undefined
+              : isOdd
+                ? hexToRgba(accentConfig.hex, 0.40)
+                : hexToRgba(accentConfig.hex, 0.18);
 
             return (
               <div
                 key={group.date}
                 id={`day-group-${group.date}`}
+                ref={isScrollTarget ? targetGroupRef : undefined}
                 style={{
                   backgroundColor: containerBg,
                   borderColor: containerBorder
                 }}
-                className="p-3 sm:p-3.5 rounded-2xl border shadow-2xs space-y-2.5 transition-all"
+                className={`p-3 sm:p-3.5 rounded-2xl border transition-all space-y-2.5 ${
+                  isPastDay
+                    ? 'bg-slate-100/60 dark:bg-slate-900/30 border-slate-200 dark:border-slate-800 shadow-none'
+                    : 'shadow-2xs'
+                }`}
               >
                 {/* Header hiển thị ngày: Thứ (In đậm) Ngày & Tháng (Font chữ thường), Bỏ năm */}
                 <div className="flex items-center justify-between px-1">
-                  <div className="flex items-baseline gap-1.5 flex-wrap">
-                    <span className={`text-[16px] sm:text-[17px] ${textPrimary} tracking-tight leading-none`}>
-                      <span className="font-bold">{cardDate.dayOfWeek}</span>{' '}
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`text-[16px] sm:text-[17px] tracking-tight leading-none ${
+                        isPastDay ? 'text-slate-500 dark:text-slate-400' : textPrimary
+                      }`}
+                    >
+                      <strong className="font-bold">{cardDate.dayOfWeek}</strong>{' '}
                       <span className="font-normal">{cardDate.dayMonth}</span>
                     </span>
                     {isToday && (
-                      <span
-                        className="ml-1 px-2 py-0.5 rounded-full text-[10px] font-extrabold text-white uppercase tracking-wider shadow-2xs"
-                        style={{ backgroundColor: accentConfig.hex }}
-                      >
-                        Hôm nay
+                      <span className="px-2 py-0.5 rounded-full text-[10.5px] font-extrabold bg-[#FF3B30] text-white shadow-xs">
+                        HÔM NAY
                       </span>
                     )}
                   </div>
 
                   <span
-                    className="px-2 py-0.5 rounded-lg text-[11px] font-bold shadow-2xs"
+                    className={`px-2 py-0.5 rounded-lg text-[11px] font-bold ${
+                      isPastDay
+                        ? 'bg-slate-200/60 dark:bg-slate-800/60 text-slate-500 dark:text-slate-400 shadow-none'
+                        : 'shadow-2xs'
+                    }`}
                     style={{
-                      backgroundColor: isDark ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.85)',
-                      color: textPrimary
+                      backgroundColor: isPastDay
+                        ? undefined
+                        : isDark
+                          ? 'rgba(0,0,0,0.35)'
+                          : 'rgba(255,255,255,0.85)',
+                      color: isPastDay ? undefined : textPrimary
                     }}
                   >
                     {group.bookings.length} ca
@@ -447,6 +455,7 @@ export const BookingListView: React.FC<BookingListViewProps> = ({
                         hasConflict={conflicts.length > 0}
                         onSelect={onSelectBooking}
                         showDate={true}
+                        isPast={isPastDay}
                       />
                     );
                   })}

@@ -3,46 +3,53 @@ import { Booking, CTV, MakeupPackage, Customer, BookingStatus } from '../types';
 import {
   getCachedBookings,
   cacheBookingsLocally,
-  getCTVs,
   getPackages,
   getCustomers,
   savePackage,
   deletePackage,
-  saveCTV,
-  deleteCTV,
   resetDemoData,
   upsertCustomerFromBooking
 } from '../services/storageService';
 import {
   subscribeToFirestoreBookings,
-  addBookingToFirestore,
-  updateBookingInFirestore,
+  subscribeToFirestoreCTVs,
+  saveBookingToFirestore,
   deleteBookingFromFirestore,
-  updateBookingStatusInFirestore
+  updateBookingStatusInFirestore,
+  saveCTVToFirestore,
+  deleteCTVFromFirestore
 } from '../services/firebase';
 
 export function useAppData() {
-  // Khởi tạo danh sách lịch: bắt đầu từ bộ nhớ đệm offline,
+  // Khởi tạo danh sách lịch: bắt đầu từ bộ nhớ đệm offline (chỉ đọc),
   // sau đó được thay thế 100% bằng Firestore Realtime snapshot ngay khi kết nối.
   // TUYỆT ĐỐI KHÔNG lấy mảng này đẩy đè lên Firestore!
   const [bookings, setBookings] = useState<Booking[]>(() => getCachedBookings());
-  const [ctvs, setCtvs] = useState<CTV[]>(() => getCTVs());
+  
+  // Danh mục CTV: Nguồn chuẩn duy nhất từ Cloud Firestore collection 'ctvs',
+  // Không lưu riêng lẻ ở localStorage của từng máy nữa.
+  const [ctvs, setCtvs] = useState<CTV[]>([]);
+  
   const [packages, setPackages] = useState<MakeupPackage[]>(() => getPackages());
   const [customers, setCustomers] = useState<Customer[]>(() => getCustomers());
   const [firestoreStatus, setFirestoreStatus] = useState<'connected' | 'syncing' | 'error'>('connecting' as any);
   const [firestoreError, setFirestoreError] = useState<string | null>(null);
 
   const refreshAll = useCallback(() => {
-    setCtvs(getCTVs());
     setPackages(getPackages());
     setCustomers(getCustomers());
   }, []);
 
   // 1. Lắng nghe thay đổi thời gian thực (Realtime Listener) từ Firebase Firestore:
-  // Danh sách hiển thị trên màn hình PHẢI được lấy 100% từ kết quả trả về của Firestore.
-  // Bất kỳ máy nào (Máy A, Máy B, máy tính) tạo/sửa/xóa đều tự động cập nhật tức thì.
+  // Thiết lập 2 bộ lắng nghe song song:
+  // - onSnapshot(collection(db, 'bookings'), ...)
+  // - onSnapshot(collection(db, 'ctvs'), ...)
+  // Nguyên tắc bảo vệ dữ liệu: Khi vừa mở app, KHÔNG ĐƯỢC lấy dữ liệu cũ trong máy đẩy ngược lên Cloud.
+  // Dữ liệu trên Firestore là nguồn chuẩn duy nhất (Single Source of Truth).
+  // Bất kỳ máy nào (Máy A, Máy B, iPad, điện thoại) tạo/sửa/xóa đều tự động cập nhật tức thì.
   useEffect(() => {
-    const unsubscribe = subscribeToFirestoreBookings(
+    // Bộ lắng nghe 1: Lịch hẹn (Bookings)
+    const unsubBookings = subscribeToFirestoreBookings(
       (firestoreBookings) => {
         setFirestoreStatus('connected');
         setFirestoreError(null);
@@ -50,23 +57,34 @@ export function useAppData() {
         // Cập nhật state trực tiếp từ Firestore realtime
         setBookings(firestoreBookings);
 
-        // Lưu vào bộ nhớ đệm LocalStorage thuần túy chỉ để đọc khi mất mạng/mở app nhanh
+        // Lưu vào bộ nhớ đệm LocalStorage thuần túy chỉ để đọc khi mất mạng
         // TUYỆT ĐỐI không bao giờ lấy cache này để đẩy đè lên Firestore!
         cacheBookingsLocally(firestoreBookings);
       },
       (error) => {
         setFirestoreStatus('error');
         setFirestoreError(error.message || 'Lỗi kết nối Firestore');
-        console.warn('Lỗi Firestore:', error);
+        console.warn('Lỗi Firestore bookings:', error);
+      }
+    );
+
+    // Bộ lắng nghe 2: Cộng tác viên (CTVs)
+    const unsubCTVs = subscribeToFirestoreCTVs(
+      (firestoreCTVs) => {
+        setCtvs(firestoreCTVs);
+      },
+      (error) => {
+        console.warn('Lỗi Firestore ctvs:', error);
       }
     );
 
     return () => {
-      unsubscribe();
+      unsubBookings();
+      unsubCTVs();
     };
   }, []);
 
-  // Lắng nghe sự kiện lưu trữ nội bộ (gói make, ctv)
+  // Lắng nghe sự kiện lưu trữ nội bộ (gói make, khách hàng)
   useEffect(() => {
     const handleStorageChange = () => {
       refreshAll();
@@ -78,19 +96,17 @@ export function useAppData() {
   }, [refreshAll]);
 
   // Thêm mới hoặc Sửa lịch: Lưu từng lịch ĐỘC LẬP vào Document riêng
-  // Khi thêm lịch mới: Chỉ gọi setDoc cho đúng Document ID vừa tạo
-  // Khi sửa lịch: Chỉ gọi updateDoc / setDoc(merge) cho đúng Document ID được sửa
+  // Gọi setDoc(doc(db, 'bookings', item.id), item, { merge: true }) cho đúng lịch đó.
+  // Tuyệt đối KHÔNG gom cả danh sách mảng để ghi đè toàn bộ collection.
   const handleSaveBooking = useCallback(async (booking: Booking) => {
-    const isExisting = bookings.some((b) => b.id === booking.id);
     const now = Date.now();
-
     const normalizedBooking: Booking = {
       ...booking,
       createdAt: booking.createdAt || now,
       updatedAt: now
     };
 
-    // 1. Cập nhật lạc quan (Optimistic update) trên giao diện máy hiện tại
+    // 1. Cập nhật lạc quan (Optimistic update) trên giao diện máy hiện tại để phản hồi tức thì
     setBookings((prev) => {
       const idx = prev.findIndex((b) => b.id === booking.id);
       if (idx >= 0) {
@@ -104,13 +120,9 @@ export function useAppData() {
       });
     });
 
-    // 2. Gửi đúng Document này lên Firestore theo chuẩn độc lập
+    // 2. Gửi đúng Document này lên Firestore: setDoc(doc(db, 'bookings', item.id), item, { merge: true })
     try {
-      if (isExisting) {
-        await updateBookingInFirestore(normalizedBooking.id, normalizedBooking);
-      } else {
-        await addBookingToFirestore(normalizedBooking);
-      }
+      await saveBookingToFirestore(normalizedBooking);
     } catch (err) {
       console.error(`Lỗi khi lưu lịch ${booking.id} lên Firestore:`, err);
     }
@@ -121,9 +133,9 @@ export function useAppData() {
     }
 
     return normalizedBooking;
-  }, [bookings]);
+  }, []);
 
-  // Xóa lịch: Chỉ gọi deleteDoc cho đúng lịch bị xóa
+  // Xóa lịch: Chỉ gọi deleteDoc(doc(db, 'bookings', item.id)) cho đúng lịch bị xóa
   const handleDeleteBooking = useCallback(async (id: string) => {
     // 1. Cập nhật lạc quan trên giao diện
     setBookings((prev) => prev.filter((b) => b.id !== id));
@@ -136,7 +148,7 @@ export function useAppData() {
     }
   }, []);
 
-  // Đổi trạng thái lịch: Chỉ cập nhật đúng Document đó
+  // Đổi trạng thái lịch: Chỉ cập nhật đúng Document đó trên Firestore
   const handleStatusChange = useCallback(async (id: string, status: BookingStatus) => {
     // 1. Cập nhật lạc quan trên giao diện
     setBookings((prev) =>
@@ -165,6 +177,42 @@ export function useAppData() {
     }
   }, []);
 
+  // Thêm mới hoặc Sửa CTV: Lưu từng bản ghi ĐỘC LẬP lên collection 'ctvs'
+  // setDoc(doc(db, 'ctvs', item.id), item, { merge: true })
+  const handleSaveCTV = useCallback(async (ctv: CTV) => {
+    // 1. Cập nhật lạc quan trên giao diện máy hiện tại
+    setCtvs((prev) => {
+      const idx = prev.findIndex((c) => c.id === ctv.id);
+      if (idx >= 0) {
+        const next = [...prev];
+        next[idx] = ctv;
+        return next.sort((a, b) => a.name.localeCompare(b.name, 'vi', { sensitivity: 'base' }));
+      }
+      const next = [...prev, ctv];
+      return next.sort((a, b) => a.name.localeCompare(b.name, 'vi', { sensitivity: 'base' }));
+    });
+
+    // 2. Lưu trực tiếp Document lên collection 'ctvs' trên Firestore
+    try {
+      await saveCTVToFirestore(ctv);
+    } catch (err) {
+      console.error(`Lỗi khi lưu CTV ${ctv.id} lên Firestore:`, err);
+    }
+  }, []);
+
+  // Xóa CTV: Chỉ gọi deleteDoc(doc(db, 'ctvs', item.id)) cho đúng Document ID
+  const handleDeleteCTV = useCallback(async (id: string) => {
+    // 1. Cập nhật lạc quan trên giao diện máy hiện tại
+    setCtvs((prev) => prev.filter((c) => c.id !== id));
+
+    // 2. Xóa trực tiếp Document khỏi Firestore collection 'ctvs'
+    try {
+      await deleteCTVFromFirestore(id);
+    } catch (err) {
+      console.error(`Lỗi khi xóa CTV ${id} khỏi Firestore:`, err);
+    }
+  }, []);
+
   const handleSavePackage = useCallback((pkg: MakeupPackage) => {
     savePackage(pkg);
     refreshAll();
@@ -172,16 +220,6 @@ export function useAppData() {
 
   const handleDeletePackage = useCallback((id: string) => {
     deletePackage(id);
-    refreshAll();
-  }, [refreshAll]);
-
-  const handleSaveCTV = useCallback((ctv: CTV) => {
-    saveCTV(ctv);
-    refreshAll();
-  }, [refreshAll]);
-
-  const handleDeleteCTV = useCallback((id: string) => {
-    deleteCTV(id);
     refreshAll();
   }, [refreshAll]);
 

@@ -38,9 +38,6 @@ export function initStorage(): void {
   if (!localStorage.getItem(STORAGE_KEYS.PACKAGES)) {
     safeSet(STORAGE_KEYS.PACKAGES, INITIAL_PACKAGES);
   }
-  if (!localStorage.getItem(STORAGE_KEYS.CTVS)) {
-    safeSet(STORAGE_KEYS.CTVS, INITIAL_CTVS);
-  }
   if (!localStorage.getItem(STORAGE_KEYS.CUSTOMERS)) {
     safeSet(STORAGE_KEYS.CUSTOMERS, INITIAL_CUSTOMERS);
   }
@@ -393,7 +390,6 @@ export function parseSyncCode(code: string): BackupData {
 export function resetDemoData(): void {
   safeSet(STORAGE_KEYS.BOOKINGS, INITIAL_BOOKINGS);
   safeSet(STORAGE_KEYS.PACKAGES, INITIAL_PACKAGES);
-  safeSet(STORAGE_KEYS.CTVS, INITIAL_CTVS);
   safeSet(STORAGE_KEYS.CUSTOMERS, INITIAL_CUSTOMERS);
   safeSet(STORAGE_KEYS.DEFAULT_REMINDER, '3_hours');
 }

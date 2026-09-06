@@ -25,38 +25,210 @@ export const BookingListView: React.FC<BookingListViewProps> = ({
   const [filterType, setFilterType] = useState<'all' | 'owner' | 'ctv'>('all');
   const [direction, setDirection] = useState<number>(0);
 
+  // Thanh chuyển tháng: Mặc định chọn tháng hiện tại
+  const [currentYear, setCurrentYear] = useState<number>(() => new Date().getFullYear());
+  const [currentMonth, setCurrentMonth] = useState<number>(() => new Date().getMonth() + 1);
+
+  const handlePrevMonth = () => {
+    if (currentMonth === 1) {
+      setCurrentMonth(12);
+      setCurrentYear((y) => y - 1);
+    } else {
+      setCurrentMonth((m) => m - 1);
+    }
+  };
+
+  const handleNextMonth = () => {
+    if (currentMonth === 12) {
+      setCurrentMonth(1);
+      setCurrentYear((y) => y + 1);
+    } else {
+      setCurrentMonth((m) => m + 1);
+    }
+  };
+
+  const handleGoCurrentMonth = () => {
+    const now = new Date();
+    setCurrentYear(now.getFullYear());
+    setCurrentMonth(now.getMonth() + 1);
+  };
+
+  const selectedMonthPrefix = `${currentYear}-${String(currentMonth).padStart(2, '0')}`;
+
+  const todayStr = useMemo(() => {
+    const d = new Date();
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  }, []);
+
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const targetGroupRef = useRef<HTMLDivElement | null>(null);
+  const lastScrolledMonthRef = useRef<string | null>(null);
+
+  // Cuộn mượt đưa đúng thẻ lịch hôm nay (hoặc lịch chưa diễn ra gần nhất) của bộ lọc hiện tại lên đầu trang
+  const scrollToTodayOrTarget = () => {
+    const now = new Date();
+    const thisMonthPrefix = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+
+    // Nếu đang xem tháng khác, đưa về tháng hiện tại trước rồi cuộn
+    if (selectedMonthPrefix !== thisMonthPrefix) {
+      setCurrentYear(now.getFullYear());
+      setCurrentMonth(now.getMonth() + 1);
+      setTimeout(() => {
+        const todayEl = document.getElementById(`day-group-${todayStr}`);
+        if (todayEl) {
+          todayEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        } else if (targetGroupRef.current) {
+          targetGroupRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        } else if (scrollContainerRef.current) {
+          scrollContainerRef.current.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+      }, 60);
+      return;
+    }
+
+    // Đang ở đúng tháng hiện tại:
+    const todayEl = document.getElementById(`day-group-${todayStr}`);
+    if (todayEl) {
+      todayEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } else if (targetGroupRef.current) {
+      targetGroupRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } else if (scrollContainerRef.current) {
+      scrollContainerRef.current.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  };
+
+  const pendingScrollDateRef = useRef<string | null>(null);
+
+  // Tìm ngày của thẻ lịch đang hiển thị sát mép trên màn hình
+  const getCurrentlyVisibleDate = (): string | null => {
+    if (!scrollContainerRef.current) return null;
+    const container = scrollContainerRef.current;
+    const containerRect = container.getBoundingClientRect();
+    const dayGroups = container.querySelectorAll<HTMLElement>('[id^="day-group-"]');
+    if (!dayGroups.length) return null;
+
+    for (let i = 0; i < dayGroups.length; i++) {
+      const el = dayGroups[i];
+      const rect = el.getBoundingClientRect();
+      // Nếu đáy của thẻ ngày này cách mép trên container từ 30px trở lên thì đây là thẻ người dùng đang thấy
+      if (rect.bottom > containerRect.top + 30) {
+        return el.id.replace('day-group-', '');
+      }
+    }
+    return dayGroups[0].id.replace('day-group-', '');
+  };
+
+  // Lấy danh sách các ngày có lịch của bộ lọc đích (xét cả từ khóa tìm kiếm nếu có)
+  const getAvailableDatesForFilter = (fType: 'all' | 'owner' | 'ctv'): string[] => {
+    const term = searchTerm.toLowerCase().trim();
+    const dates = new Set<string>();
+    bookings.forEach((b) => {
+      if (!b.date || !b.date.startsWith(selectedMonthPrefix)) return;
+      if (fType === 'owner' && b.performerType !== 'owner') return;
+      if (fType === 'ctv' && b.performerType !== 'ctv') return;
+      const matchText =
+        !term ||
+        b.customerName.toLowerCase().includes(term) ||
+        (b.makeupInfo && b.makeupInfo.toLowerCase().includes(term)) ||
+        (b.note && b.note.toLowerCase().includes(term)) ||
+        b.customerPhone.includes(term) ||
+        b.customerAddress.toLowerCase().includes(term) ||
+        b.packageNameSnapshot.toLowerCase().includes(term) ||
+        (b.ctvNameSnapshot && b.ctvNameSnapshot.toLowerCase().includes(term));
+      if (matchText) {
+        dates.add(b.date);
+      }
+    });
+    return Array.from(dates).sort();
+  };
+
+  // Tìm chính ngày đó hoặc ngày gần nhất trong danh sách ngày có lịch
+  const findNearestDateInList = (targetDate: string, availableDates: string[]): string | null => {
+    if (!availableDates.length) return null;
+    if (availableDates.includes(targetDate)) return targetDate;
+
+    const targetTime = new Date(targetDate).getTime();
+    let closestDate = availableDates[0];
+    let minDiff = Math.abs(new Date(availableDates[0]).getTime() - targetTime);
+
+    for (let i = 1; i < availableDates.length; i++) {
+      const d = availableDates[i];
+      const diff = Math.abs(new Date(d).getTime() - targetTime);
+      if (diff < minDiff) {
+        minDiff = diff;
+        closestDate = d;
+      } else if (diff === minDiff && d > closestDate) {
+        closestDate = d;
+      }
+    }
+    return closestDate;
+  };
+
+  // Chuyển bộ lọc và ghi nhớ vị trí ngày đang xem để hiển thị đúng ngày đó hoặc ngày gần nhất
+  const switchFilterWithDatePreservation = (newFilter: 'all' | 'owner' | 'ctv', newDirection: number) => {
+    // 1. Xác định ngày đang hiển thị ở bộ lọc trước đó
+    const currentVisibleDate = getCurrentlyVisibleDate() || todayStr;
+
+    // 2. Tìm ngày trong bộ lọc mới: chính ngày đó hoặc ngày gần nhất
+    const availableDates = getAvailableDatesForFilter(newFilter);
+    const targetDate = findNearestDateInList(currentVisibleDate, availableDates);
+    pendingScrollDateRef.current = targetDate;
+
+    setDirection(newDirection);
+    setFilterType(newFilter);
+  };
+
+  // Khi chuyển bộ lọc, cuộn ngay đến đúng thẻ ngày đang xem hoặc ngày gần nhất
+  useEffect(() => {
+    if (!pendingScrollDateRef.current) return;
+    const dateToScroll = pendingScrollDateRef.current;
+    pendingScrollDateRef.current = null;
+
+    const performScroll = () => {
+      const el = document.getElementById(`day-group-${dateToScroll}`);
+      if (el && scrollContainerRef.current) {
+        const container = scrollContainerRef.current;
+        const containerRect = container.getBoundingClientRect();
+        const elRect = el.getBoundingClientRect();
+        const targetScrollTop = container.scrollTop + (elRect.top - containerRect.top);
+        container.scrollTop = Math.max(0, targetScrollTop);
+      } else if (scrollContainerRef.current) {
+        scrollContainerRef.current.scrollTop = 0;
+      }
+    };
+
+    performScroll();
+    const rId = requestAnimationFrame(performScroll);
+    return () => cancelAnimationFrame(rId);
+  }, [filterType]);
+
   const handleSelectFilter = (newFilter: 'all' | 'owner' | 'ctv') => {
     const currentIndex = FILTERS.indexOf(filterType);
     const newIndex = FILTERS.indexOf(newFilter);
     if (newIndex !== currentIndex) {
-      setDirection(newIndex > currentIndex ? 1 : -1);
-      setFilterType(newFilter);
-      if (scrollContainerRef.current) {
-        scrollContainerRef.current.scrollTop = 0;
-      }
+      switchFilterWithDatePreservation(newFilter, newIndex > currentIndex ? 1 : -1);
+    } else {
+      // Khi đang ở trong bộ lọc nào bấm vào nút của chính bộ lọc đó:
+      // Tự động cuộn đưa về đúng thẻ lịch hôm nay của chính bộ lọc đó lên đầu trang
+      scrollToTodayOrTarget();
     }
   };
 
-  // Vuốt chuyển filter: chặn ở 2 đầu, không vuốt vòng tròn
+  // Vuốt chuyển filter: chặn ở 2 đầu, không vuốt vòng tròn, giữ nguyên ngày đang xem
   const handleSwipeNextFilter = () => {
     const currentIndex = FILTERS.indexOf(filterType);
     if (currentIndex < FILTERS.length - 1) {
-      setDirection(1);
-      setFilterType(FILTERS[currentIndex + 1]);
-      if (scrollContainerRef.current) {
-        scrollContainerRef.current.scrollTop = 0;
-      }
+      switchFilterWithDatePreservation(FILTERS[currentIndex + 1], 1);
     }
   };
 
   const handleSwipePrevFilter = () => {
     const currentIndex = FILTERS.indexOf(filterType);
     if (currentIndex > 0) {
-      setDirection(-1);
-      setFilterType(FILTERS[currentIndex - 1]);
-      if (scrollContainerRef.current) {
-        scrollContainerRef.current.scrollTop = 0;
-      }
+      switchFilterWithDatePreservation(FILTERS[currentIndex - 1], -1);
     }
   };
 
@@ -117,43 +289,7 @@ export const BookingListView: React.FC<BookingListViewProps> = ({
     }
   };
 
-  // 1. Thanh chuyển tháng: Mặc định chọn tháng hiện tại
-  const [currentYear, setCurrentYear] = useState<number>(() => new Date().getFullYear());
-  const [currentMonth, setCurrentMonth] = useState<number>(() => new Date().getMonth() + 1);
 
-  const handlePrevMonth = () => {
-    if (currentMonth === 1) {
-      setCurrentMonth(12);
-      setCurrentYear((y) => y - 1);
-    } else {
-      setCurrentMonth((m) => m - 1);
-    }
-  };
-
-  const handleNextMonth = () => {
-    if (currentMonth === 12) {
-      setCurrentMonth(1);
-      setCurrentYear((y) => y + 1);
-    } else {
-      setCurrentMonth((m) => m + 1);
-    }
-  };
-
-  const handleGoCurrentMonth = () => {
-    const now = new Date();
-    setCurrentYear(now.getFullYear());
-    setCurrentMonth(now.getMonth() + 1);
-  };
-
-  const selectedMonthPrefix = `${currentYear}-${String(currentMonth).padStart(2, '0')}`;
-
-  const todayStr = useMemo(() => {
-    const d = new Date();
-    const y = d.getFullYear();
-    const m = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    return `${y}-${m}-${day}`;
-  }, []);
 
   // Lọc danh sách lịch hẹn trong tháng được chọn
   const monthBookings = useMemo(() => {
@@ -225,9 +361,7 @@ export const BookingListView: React.FC<BookingListViewProps> = ({
     return null;
   }, [selectedMonthPrefix, groupedBookings, todayStr]);
 
-  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
-  const targetGroupRef = useRef<HTMLDivElement | null>(null);
-  const lastScrolledMonthRef = useRef<string | null>(null);
+
 
   // Hiển thị ngay 'Ngày hôm nay' (hoặc ngày gần nhất) lên đầu màn hình khi lần đầu mở tháng đó
   // KHÔNG gọi khi chỉ đơn thuần chuyển đổi filterType (Tôi/CTV/Tất cả) để tránh giật / nảy trang

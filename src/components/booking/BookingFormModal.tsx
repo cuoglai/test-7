@@ -810,9 +810,9 @@ export const BookingFormModal: React.FC<BookingFormModalProps> = ({
                 </span>
               </div>
 
-              {/* Khung ô nhập giá tiền thu nhỏ gọn gàng kèm 2 nút - và + với bước nhảy 10.000đ */}
-              <div className="flex items-center gap-1 shrink-0">
-                {/* Nút trừ -10.000đ */}
+              {/* Khung ô nhập giá tiền thu nhỏ gọn gàng kèm 2 nút - và + với bước nhảy 10.000đ (chiều ngang nút x2 để dễ bấm) */}
+              <div className="flex items-center gap-1.5 shrink-0">
+                {/* Nút trừ -10.000đ: chiều ngang gấp đôi w-14 sm:w-15 */}
                 <button
                   id="btn-price-decrease"
                   type="button"
@@ -820,9 +820,9 @@ export const BookingFormModal: React.FC<BookingFormModalProps> = ({
                   disabled={price <= 0}
                   title="Giảm 10.000đ"
                   aria-label="Giảm 10.000đ"
-                  className={`w-7.5 h-7.5 rounded-lg font-bold transition-all flex items-center justify-center cursor-pointer border ${cardBorder} ${inputBg} ${textPrimary} hover:opacity-80 active:scale-95 disabled:opacity-30 disabled:pointer-events-none shadow-2xs`}
+                  className={`w-14 sm:w-15 h-8 rounded-lg font-bold transition-all flex items-center justify-center cursor-pointer border ${cardBorder} ${inputBg} ${textPrimary} hover:opacity-80 active:scale-95 disabled:opacity-30 disabled:pointer-events-none shadow-2xs`}
                 >
-                  <Minus className="w-3.5 h-3.5 stroke-[2.5]" />
+                  <Minus className="w-4 h-4 stroke-[2.5]" />
                 </button>
 
                 {/* Ô nhập số tiền */}
@@ -838,22 +838,22 @@ export const BookingFormModal: React.FC<BookingFormModalProps> = ({
                   onBlur={handlePriceBlur}
                   placeholder="0đ"
                   aria-label="Giá Makeup"
-                  className={`w-28 sm:w-32 h-7.5 text-center font-mono font-black text-[16px] sm:text-[17px] px-1 rounded-lg border-2 ${cardBorder} ${inputBg} focus:outline-none focus:border-[#34C759] shadow-2xs transition-all`}
+                  className={`w-24 sm:w-28 h-8 text-center font-mono font-black text-[15px] sm:text-[16px] px-1 rounded-lg border-2 ${cardBorder} ${inputBg} focus:outline-none focus:border-[#34C759] shadow-2xs transition-all`}
                   style={{
                     color: '#34C759'
                   }}
                 />
 
-                {/* Nút cộng +10.000đ */}
+                {/* Nút cộng +10.000đ: chiều ngang gấp đôi w-14 sm:w-15 */}
                 <button
                   id="btn-price-increase"
                   type="button"
                   onClick={() => handleStepPrice(10000)}
                   title="Tăng 10.000đ"
                   aria-label="Tăng 10.000đ"
-                  className={`w-7.5 h-7.5 rounded-lg font-bold transition-all flex items-center justify-center cursor-pointer border ${cardBorder} ${inputBg} ${textPrimary} hover:opacity-80 active:scale-95 shadow-2xs`}
+                  className={`w-14 sm:w-15 h-8 rounded-lg font-bold transition-all flex items-center justify-center cursor-pointer border ${cardBorder} ${inputBg} ${textPrimary} hover:opacity-80 active:scale-95 shadow-2xs`}
                 >
-                  <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
+                  <Plus className="w-4 h-4 stroke-[2.5]" />
                 </button>
               </div>
             </div>

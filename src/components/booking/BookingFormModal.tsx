@@ -253,6 +253,12 @@ export const BookingFormModal: React.FC<BookingFormModalProps> = ({
     setPriceInputText(formatCurrency(val));
   };
 
+  const handleStepPrice = (step: number) => {
+    const next = Math.max(0, price + step);
+    setPrice(next);
+    setPriceInputText(formatCurrency(next));
+  };
+
   const handlePriceChange = (valStr: string) => {
     setPriceInputText(valStr);
     const digits = valStr.replace(/\D/g, '');
@@ -800,12 +806,26 @@ export const BookingFormModal: React.FC<BookingFormModalProps> = ({
                   <Coins className="w-4 h-4" />
                 </div>
                 <span className={`text-[14px] font-bold ${textPrimary} truncate`}>
-                  Giá ca makeup
+                  Giá Makeup
                 </span>
               </div>
 
-              {/* Khung ô nhập giá tiền thu nhỏ gọn gàng, vừa vặn với kích cỡ chữ */}
-              <div className="relative shrink-0">
+              {/* Khung ô nhập giá tiền thu nhỏ gọn gàng kèm 2 nút - và + với bước nhảy 10.000đ */}
+              <div className="flex items-center gap-1 shrink-0">
+                {/* Nút trừ -10.000đ */}
+                <button
+                  id="btn-price-decrease"
+                  type="button"
+                  onClick={() => handleStepPrice(-10000)}
+                  disabled={price <= 0}
+                  title="Giảm 10.000đ"
+                  aria-label="Giảm 10.000đ"
+                  className={`w-7.5 h-7.5 rounded-lg font-bold transition-all flex items-center justify-center cursor-pointer border ${cardBorder} ${inputBg} ${textPrimary} hover:opacity-80 active:scale-95 disabled:opacity-30 disabled:pointer-events-none shadow-2xs`}
+                >
+                  <Minus className="w-3.5 h-3.5 stroke-[2.5]" />
+                </button>
+
+                {/* Ô nhập số tiền */}
                 <input
                   id="booking-input-price"
                   type="text"
@@ -817,12 +837,24 @@ export const BookingFormModal: React.FC<BookingFormModalProps> = ({
                   }}
                   onBlur={handlePriceBlur}
                   placeholder="0đ"
-                  aria-label="Giá ca makeup"
-                  className={`w-32 sm:w-36 text-right font-mono font-black text-[18px] sm:text-[19px] px-2.5 py-1 rounded-lg border-2 ${cardBorder} ${inputBg} focus:outline-none focus:border-[#34C759] shadow-2xs transition-all`}
+                  aria-label="Giá Makeup"
+                  className={`w-28 sm:w-32 h-7.5 text-center font-mono font-black text-[16px] sm:text-[17px] px-1 rounded-lg border-2 ${cardBorder} ${inputBg} focus:outline-none focus:border-[#34C759] shadow-2xs transition-all`}
                   style={{
                     color: '#34C759'
                   }}
                 />
+
+                {/* Nút cộng +10.000đ */}
+                <button
+                  id="btn-price-increase"
+                  type="button"
+                  onClick={() => handleStepPrice(10000)}
+                  title="Tăng 10.000đ"
+                  aria-label="Tăng 10.000đ"
+                  className={`w-7.5 h-7.5 rounded-lg font-bold transition-all flex items-center justify-center cursor-pointer border ${cardBorder} ${inputBg} ${textPrimary} hover:opacity-80 active:scale-95 shadow-2xs`}
+                >
+                  <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
+                </button>
               </div>
             </div>
 

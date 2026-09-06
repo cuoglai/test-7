@@ -31,6 +31,9 @@ export const BookingListView: React.FC<BookingListViewProps> = ({
     if (newIndex !== currentIndex) {
       setDirection(newIndex > currentIndex ? 1 : -1);
       setFilterType(newFilter);
+      if (scrollContainerRef.current) {
+        scrollContainerRef.current.scrollTop = 0;
+      }
     }
   };
 
@@ -40,6 +43,9 @@ export const BookingListView: React.FC<BookingListViewProps> = ({
     if (currentIndex < FILTERS.length - 1) {
       setDirection(1);
       setFilterType(FILTERS[currentIndex + 1]);
+      if (scrollContainerRef.current) {
+        scrollContainerRef.current.scrollTop = 0;
+      }
     }
   };
 
@@ -48,6 +54,9 @@ export const BookingListView: React.FC<BookingListViewProps> = ({
     if (currentIndex > 0) {
       setDirection(-1);
       setFilterType(FILTERS[currentIndex - 1]);
+      if (scrollContainerRef.current) {
+        scrollContainerRef.current.scrollTop = 0;
+      }
     }
   };
 
@@ -218,10 +227,14 @@ export const BookingListView: React.FC<BookingListViewProps> = ({
 
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const targetGroupRef = useRef<HTMLDivElement | null>(null);
+  const lastScrolledMonthRef = useRef<string | null>(null);
 
-  // Hiển thị ngay 'Ngày hôm nay' (hoặc ngày gần nhất) lên đầu màn hình mà không cuộn chạy animation
+  // Hiển thị ngay 'Ngày hôm nay' (hoặc ngày gần nhất) lên đầu màn hình khi lần đầu mở tháng đó
+  // KHÔNG gọi khi chỉ đơn thuần chuyển đổi filterType (Tôi/CTV/Tất cả) để tránh giật / nảy trang
   useEffect(() => {
     if (!targetScrollDate) return;
+    if (lastScrolledMonthRef.current === selectedMonthPrefix) return;
+    lastScrolledMonthRef.current = selectedMonthPrefix;
 
     const jumpToTarget = () => {
       if (targetGroupRef.current) {
@@ -233,9 +246,7 @@ export const BookingListView: React.FC<BookingListViewProps> = ({
     };
 
     jumpToTarget();
-    const rId = requestAnimationFrame(jumpToTarget);
-    return () => cancelAnimationFrame(rId);
-  }, [targetScrollDate]);
+  }, [targetScrollDate, selectedMonthPrefix]);
 
   const viewBg = isDark ? 'bg-[#000000]' : 'bg-[#F2F2F7]';
   const cardBg = isDark ? 'bg-[#1C1C1E]' : 'bg-white';
@@ -435,11 +446,11 @@ export const BookingListView: React.FC<BookingListViewProps> = ({
       >
         <motion.div
           key={filterType}
-          initial={{ x: direction > 0 ? 36 : direction < 0 ? -36 : 0, opacity: 0.85 }}
+          initial={{ x: direction > 0 ? 24 : direction < 0 ? -24 : 0, opacity: 0.85 }}
           animate={{ x: 0, opacity: 1 }}
           transition={{
-            x: { type: 'spring', stiffness: 500, damping: 38, mass: 0.8 },
-            opacity: { duration: 0.12, ease: 'easeOut' }
+            x: { duration: 0.2, ease: [0.22, 1, 0.36, 1] },
+            opacity: { duration: 0.15, ease: 'easeOut' }
           }}
           style={{
             paddingBottom: 'calc(max(env(safe-area-inset-bottom, 0px), 12px) + 64px)'

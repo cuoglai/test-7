@@ -204,6 +204,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
           allBookings={bookings}
           onSelectBooking={onSelectBooking}
           onOpenAddBooking={onOpenAddBooking}
+          onSelectDate={onDateChange}
           onScroll={handleScroll}
         />
       )}

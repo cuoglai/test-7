@@ -899,6 +899,18 @@ export const BookingFormModal: React.FC<BookingFormModalProps> = ({
               </button>
             </div>
 
+            {/* Cảnh báo trùng giờ khi xếp lịch cho 'Tôi' */}
+            {performerType === 'owner' && conflicts.length > 0 && (
+              <div className="pt-2 border-t border-[#FF3B30]/20">
+                <div className="p-2 bg-[#FF3B30]/10 border border-[#FF3B30]/30 rounded-lg flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 text-[#FF3B30] shrink-0" />
+                  <p className="text-[11px] text-[#FF3B30] font-medium leading-tight">
+                    Bạn đang có lịch trùng lúc {conflicts[0].overlapStart} – {conflicts[0].overlapEnd}!
+                  </p>
+                </div>
+              </div>
+            )}
+
             {/* Chọn CTV khi chọn mục CTV */}
             {performerType === 'ctv' && (
               <div className={`pt-2 border-t ${cardBorder} space-y-1.5`}>

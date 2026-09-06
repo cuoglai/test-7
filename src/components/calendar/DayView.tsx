@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion } from 'motion/react';
 import { Booking } from '../../types';
 import { BookingCard } from '../booking/BookingCard';
 import { findCTVConflicts } from '../../services/conflictService';
@@ -17,29 +17,6 @@ interface DayViewProps {
   onSelectDate?: (date: string) => void;
   onScroll?: (e: React.UIEvent<HTMLDivElement>) => void;
 }
-
-const timelineSlideVariants = {
-  enter: (direction: number) => ({
-    x: direction > 0 ? 60 : direction < 0 ? -60 : 0,
-    opacity: 0
-  }),
-  center: {
-    x: 0,
-    opacity: 1,
-    transition: {
-      x: { type: 'spring', stiffness: 350, damping: 30 },
-      opacity: { duration: 0.18, ease: 'easeOut' }
-    }
-  },
-  exit: (direction: number) => ({
-    x: direction > 0 ? -60 : direction < 0 ? 60 : 0,
-    opacity: 0,
-    transition: {
-      x: { type: 'spring', stiffness: 350, damping: 30 },
-      opacity: { duration: 0.14, ease: 'easeIn' }
-    }
-  })
-};
 
 export const DayView: React.FC<DayViewProps> = ({
   date,
@@ -162,19 +139,19 @@ export const DayView: React.FC<DayViewProps> = ({
         paddingRight: 'max(env(safe-area-inset-right, 0px), 12px)'
       }}
     >
-      <AnimatePresence mode="wait" custom={direction} initial={false}>
-        <motion.div
-          key={date}
-          custom={direction}
-          variants={timelineSlideVariants}
-          initial="enter"
-          animate="center"
-          exit="exit"
-          className="space-y-3 min-h-[calc(100%+50px)]"
-          style={{
-            paddingBottom: 'calc(max(env(safe-area-inset-bottom, 0px), 12px) + 64px)'
-          }}
-        >
+      <motion.div
+        key={date}
+        initial={{ x: direction > 0 ? 36 : direction < 0 ? -36 : 0, opacity: 0.85 }}
+        animate={{ x: 0, opacity: 1 }}
+        transition={{
+          x: { type: 'spring', stiffness: 500, damping: 38, mass: 0.8 },
+          opacity: { duration: 0.12, ease: 'easeOut' }
+        }}
+        className="space-y-3 min-h-[calc(100%+50px)]"
+        style={{
+          paddingBottom: 'calc(max(env(safe-area-inset-bottom, 0px), 12px) + 64px)'
+        }}
+      >
           {sortedBookings.length === 0 ? (
             <div
               id="day-view-empty-state"
@@ -247,7 +224,6 @@ export const DayView: React.FC<DayViewProps> = ({
             </>
           )}
         </motion.div>
-      </AnimatePresence>
     </div>
   );
 };

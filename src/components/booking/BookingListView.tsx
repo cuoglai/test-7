@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
+import { motion } from 'motion/react';
 import { Booking } from '../../types';
 import { BookingCard } from './BookingCard';
 import { Search, X, ClipboardList, ChevronLeft, ChevronRight } from 'lucide-react';
@@ -12,6 +13,8 @@ interface BookingListViewProps {
   onOpenAddBooking: () => void;
 }
 
+const FILTERS: ('all' | 'owner' | 'ctv')[] = ['all', 'owner', 'ctv'];
+
 export const BookingListView: React.FC<BookingListViewProps> = ({
   bookings,
   onSelectBooking,
@@ -20,6 +23,90 @@ export const BookingListView: React.FC<BookingListViewProps> = ({
   const { isDark, accentConfig } = useTheme();
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState<'all' | 'owner' | 'ctv'>('all');
+  const [direction, setDirection] = useState<number>(0);
+
+  const handleSelectFilter = (newFilter: 'all' | 'owner' | 'ctv') => {
+    const currentIndex = FILTERS.indexOf(filterType);
+    const newIndex = FILTERS.indexOf(newFilter);
+    if (newIndex !== currentIndex) {
+      setDirection(newIndex > currentIndex ? 1 : -1);
+      setFilterType(newFilter);
+    }
+  };
+
+  // Vuốt chuyển filter: chặn ở 2 đầu, không vuốt vòng tròn
+  const handleSwipeNextFilter = () => {
+    const currentIndex = FILTERS.indexOf(filterType);
+    if (currentIndex < FILTERS.length - 1) {
+      setDirection(1);
+      setFilterType(FILTERS[currentIndex + 1]);
+    }
+  };
+
+  const handleSwipePrevFilter = () => {
+    const currentIndex = FILTERS.indexOf(filterType);
+    if (currentIndex > 0) {
+      setDirection(-1);
+      setFilterType(FILTERS[currentIndex - 1]);
+    }
+  };
+
+  // Cử chỉ chạm vuốt & kéo chuột để chuyển đổi bộ lọc
+  const touchStartX = useRef<number | null>(null);
+  const touchStartY = useRef<number | null>(null);
+  const touchStartTime = useRef<number>(0);
+  const mouseStartX = useRef<number | null>(null);
+  const mouseStartY = useRef<number | null>(null);
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    touchStartX.current = e.touches[0].clientX;
+    touchStartY.current = e.touches[0].clientY;
+    touchStartTime.current = Date.now();
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (touchStartX.current === null || touchStartY.current === null) return;
+    const deltaX = e.changedTouches[0].clientX - touchStartX.current;
+    const deltaY = e.changedTouches[0].clientY - touchStartY.current;
+    const deltaTime = Date.now() - touchStartTime.current;
+    touchStartX.current = null;
+    touchStartY.current = null;
+
+    const isHorizontal = Math.abs(deltaX) > Math.abs(deltaY) * 1.2;
+    const isSufficient = Math.abs(deltaX) >= 35 || (Math.abs(deltaX) >= 20 && deltaTime < 300);
+
+    if (isHorizontal && isSufficient) {
+      if (deltaX < 0) {
+        // Vuốt sang trái -> sang filter kế tiếp (Tất cả -> Tôi -> CTV), chặn ở CTV
+        handleSwipeNextFilter();
+      } else {
+        // Vuốt sang phải -> về filter trước đó (CTV -> Tôi -> Tất cả), chặn ở Tất cả
+        handleSwipePrevFilter();
+      }
+    }
+  };
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (e.button !== 0) return;
+    mouseStartX.current = e.clientX;
+    mouseStartY.current = e.clientY;
+  };
+
+  const handleMouseUp = (e: React.MouseEvent) => {
+    if (mouseStartX.current === null || mouseStartY.current === null) return;
+    const deltaX = e.clientX - mouseStartX.current;
+    const deltaY = e.clientY - mouseStartY.current;
+    mouseStartX.current = null;
+    mouseStartY.current = null;
+
+    if (Math.abs(deltaX) >= 45 && Math.abs(deltaX) > Math.abs(deltaY) * 1.2) {
+      if (deltaX < 0) {
+        handleSwipeNextFilter();
+      } else {
+        handleSwipePrevFilter();
+      }
+    }
+  };
 
   // 1. Thanh chuyển tháng: Mặc định chọn tháng hiện tại
   const [currentYear, setCurrentYear] = useState<number>(() => new Date().getFullYear());
@@ -220,7 +307,7 @@ export const BookingListView: React.FC<BookingListViewProps> = ({
             <button
               id="filter-all-btn"
               type="button"
-              onClick={() => setFilterType('all')}
+              onClick={() => handleSelectFilter('all')}
               style={{
                 backgroundColor: filterType === 'all' ? accentConfig.hex : 'transparent',
                 color: filterType === 'all' ? '#FFFFFF' : undefined
@@ -249,7 +336,7 @@ export const BookingListView: React.FC<BookingListViewProps> = ({
             <button
               id="filter-owner-btn"
               type="button"
-              onClick={() => setFilterType('owner')}
+              onClick={() => handleSelectFilter('owner')}
               style={{
                 backgroundColor: filterType === 'owner' ? accentConfig.hex : 'transparent',
                 color: filterType === 'owner' ? '#FFFFFF' : undefined
@@ -279,7 +366,7 @@ export const BookingListView: React.FC<BookingListViewProps> = ({
             <button
               id="filter-ctv-btn"
               type="button"
-              onClick={() => setFilterType('ctv')}
+              onClick={() => handleSelectFilter('ctv')}
               style={{
                 backgroundColor: filterType === 'ctv' ? '#5856D6' : 'transparent',
                 color: filterType === 'ctv' ? '#FFFFFF' : undefined
@@ -331,17 +418,29 @@ export const BookingListView: React.FC<BookingListViewProps> = ({
         </div>
       </div>
 
-      {/* Bookings List */}
+      {/* Bookings List with horizontal swipe to switch filters */}
       <div
         ref={scrollContainerRef}
-        className="flex-1 overflow-y-auto ios-scrollable pt-3"
+        onTouchStart={handleTouchStart}
+        onTouchEnd={handleTouchEnd}
+        onMouseDown={handleMouseDown}
+        onMouseUp={handleMouseUp}
+        className="flex-1 overflow-y-auto ios-scrollable pt-3 select-none"
         style={{
           WebkitOverflowScrolling: 'touch',
+          touchAction: 'pan-y',
           paddingLeft: 'max(env(safe-area-inset-left, 0px), 16px)',
           paddingRight: 'max(env(safe-area-inset-right, 0px), 16px)'
         }}
       >
-        <div
+        <motion.div
+          key={filterType}
+          initial={{ x: direction > 0 ? 36 : direction < 0 ? -36 : 0, opacity: 0.85 }}
+          animate={{ x: 0, opacity: 1 }}
+          transition={{
+            x: { type: 'spring', stiffness: 500, damping: 38, mass: 0.8 },
+            opacity: { duration: 0.12, ease: 'easeOut' }
+          }}
           style={{
             paddingBottom: 'calc(max(env(safe-area-inset-bottom, 0px), 12px) + 64px)'
           }}
@@ -457,7 +556,7 @@ export const BookingListView: React.FC<BookingListViewProps> = ({
             );
           })
         )}
-        </div>
+        </motion.div>
       </div>
     </div>
   );

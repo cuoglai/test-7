@@ -29,7 +29,8 @@ import {
   Coins,
   Minus,
   Plus,
-  Clipboard
+  Clipboard,
+  User
 } from 'lucide-react';
 
 interface BookingFormModalProps {
@@ -61,7 +62,8 @@ export const BookingFormModal: React.FC<BookingFormModalProps> = ({
 }) => {
   const { isDark, accentConfig } = useTheme();
 
-  // 1. Thông tin lịch make (ô note lớn, tự do nhiều dòng, mặc định trống ~4 dòng, tự động mở rộng theo nội dung)
+  // 1. Thông tin lịch make: Tách dòng đầu tiên là Tên khách hàng, ở dưới là Thông tin chi tiết
+  const [customerName, setCustomerName] = useState('');
   const [makeupInfo, setMakeupInfo] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -161,9 +163,12 @@ export const BookingFormModal: React.FC<BookingFormModalProps> = ({
   const handleMakeupInfoChange = (val: string) => {
     setMakeupInfo(val);
     if (errors.makeupInfo) setErrors((prev) => ({ ...prev, makeupInfo: '' }));
+    if (errors.customerName && (customerName.trim() || val.trim())) {
+      setErrors((prev) => ({ ...prev, customerName: '' }));
+    }
     adjustTextareaHeight();
 
-    // Tự động nhận diện thời gian & ngày nếu người dùng dán theo mẫu
+    // Tự động nhận diện thời gian, ngày & tên nếu người dùng dán theo mẫu
     if (!editBooking) {
       const parsed = parseBookingTemplate(val);
       if (parsed.time) {
@@ -171,6 +176,9 @@ export const BookingFormModal: React.FC<BookingFormModalProps> = ({
       }
       if (parsed.date) {
         setDate(parsed.date);
+      }
+      if (parsed.name && !customerName.trim()) {
+        setCustomerName(parsed.name);
       }
     }
   };
@@ -278,6 +286,7 @@ export const BookingFormModal: React.FC<BookingFormModalProps> = ({
     if (!isOpen) return;
 
     if (editBooking) {
+      setCustomerName(editBooking.customerName || getBookingDisplayTitle(editBooking) || '');
       setMakeupInfo(editBooking.makeupInfo ?? getBookingMakeupInfo(editBooking));
       setDate(editBooking.date);
       const start = editBooking.startTime || '10:30';
@@ -309,6 +318,7 @@ export const BookingFormModal: React.FC<BookingFormModalProps> = ({
       setReminder(editBooking.reminder || '30_mins');
       setNote(editBooking.note || '');
     } else {
+      setCustomerName('');
       setMakeupInfo('');
       const todayStr = initialDate || formatDateString(new Date());
       setDate(todayStr);
@@ -386,8 +396,11 @@ export const BookingFormModal: React.FC<BookingFormModalProps> = ({
     if (e) e.preventDefault();
     const newErrors: { [key: string]: string } = {};
 
-    if (!makeupInfo.trim()) {
-      newErrors.makeupInfo = 'Vui lòng nhập thông tin khách / lịch make.';
+    const trimmedName = customerName.trim();
+    const trimmedInfo = makeupInfo.trim();
+
+    if (!trimmedName && !trimmedInfo) {
+      newErrors.customerName = 'Vui lòng nhập tên khách hàng.';
     }
     if (!date) {
       newErrors.date = 'Vui lòng chọn ngày makeup.';
@@ -404,9 +417,16 @@ export const BookingFormModal: React.FC<BookingFormModalProps> = ({
       return;
     }
 
-    const displayTitle = getBookingDisplayTitle({ makeupInfo } as any);
-    const parsedTemplate = parseBookingTemplate(makeupInfo);
-    const customerPhone = parsedTemplate.phone || extractVietnamesePhoneNumber(makeupInfo) || editBooking?.customerPhone || '';
+    const displayTitle = getBookingDisplayTitle({ makeupInfo: trimmedInfo } as any);
+    const parsedTemplate = parseBookingTemplate(trimmedInfo);
+    const resolvedCustomerName =
+      trimmedName ||
+      parsedTemplate.name ||
+      displayTitle ||
+      editBooking?.customerName ||
+      'Khách makeup';
+
+    const customerPhone = parsedTemplate.phone || extractVietnamesePhoneNumber(trimmedInfo) || editBooking?.customerPhone || '';
     const customerAddress = parsedTemplate.address || editBooking?.customerAddress || '';
     const quantity = parsedTemplate.quantity || editBooking?.quantity || 1;
 
@@ -418,8 +438,8 @@ export const BookingFormModal: React.FC<BookingFormModalProps> = ({
       startTime,
       endTime: endCalculation.endTime,
 
-      makeupInfo: makeupInfo.trim(),
-      customerName: displayTitle || parsedTemplate.name || editBooking?.customerName || 'Khách makeup',
+      makeupInfo: trimmedInfo,
+      customerName: resolvedCustomerName,
       customerPhone,
       customerAddress,
       quantity,
@@ -502,48 +522,74 @@ export const BookingFormModal: React.FC<BookingFormModalProps> = ({
 
           {/* ============================================================ */}
           {/* 1. THÔNG TIN LỊCH MAKE (Đưa lên đầu tiên ngay dưới tiêu đề)   */}
+          {/* Tách 1 dòng đầu tiên là tên khách hàng, ở dưới là chi tiết    */}
           {/* ============================================================ */}
-          <div className={`${cardBg} px-3.5 py-2.5 rounded-xl border ${cardBorder} shadow-xs space-y-1.5`}>
+          <div className={`${cardBg} px-3.5 py-2.5 rounded-xl border ${cardBorder} shadow-xs space-y-2`}>
             <div className="flex justify-between items-center">
-              <label
-                htmlFor="booking-input-makeup-info"
-                className={`text-[13px] font-bold ${textSecondary} flex items-center gap-1.5`}
-              >
+              <label className={`text-[13px] font-bold ${textSecondary} flex items-center gap-1.5`}>
                 <FileText className="w-4 h-4" style={{ color: accentConfig.hex }} />
                 Thông tin lịch make <span className="text-[#FF3B30]">*</span>
               </label>
             </div>
 
-            <div className="relative">
-              <textarea
-                ref={textareaRef}
-                id="booking-input-makeup-info"
-                rows={3}
-                value={makeupInfo}
-                onChange={(e) => handleMakeupInfoChange(e.target.value)}
-                placeholder=""
-                className={`w-full p-2.5 pb-8 rounded-xl ${inputBg} border border-transparent focus:outline-none text-[14.5px] ${textPrimary} leading-relaxed min-h-[90px] resize-none overflow-hidden`}
-                style={{
-                  borderColor: errors.makeupInfo ? '#FF3B30' : undefined
-                }}
-              />
-              {/* Nút 'Dán' thông minh ở góc dưới bên phải bên trong khung nhập nội dung */}
-              <button
-                type="button"
-                id="btn-smart-paste-makeup-info"
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={handleSmartPaste}
-                title="Dán từ bộ nhớ tạm"
-                className={`absolute right-2 bottom-2 h-6 px-2.5 rounded-md border text-[11px] font-bold flex items-center gap-1 shadow-2xs transition-all cursor-pointer active:scale-95 z-10 select-none touch-manipulation ${
-                  isDark
-                    ? 'bg-[#3A3A3C] hover:bg-[#48484A] border-[#48484A] text-white'
-                    : 'bg-white hover:bg-[#F2F2F7] border-[#D1D1D6] text-[#1C1C1E]'
-                }`}
-              >
-                <Clipboard className="w-3 h-3" style={{ color: accentConfig.hex }} />
-                <span>Dán</span>
-              </button>
+            {/* 2 ô nhập để gần nhau, chú thích nằm mờ ở trong ô tối ưu không gian */}
+            <div className="space-y-1.5">
+              {/* Dòng 1: Tên khách hàng (chú thích mờ trong ô) */}
+              <div>
+                <input
+                  id="booking-input-customer-name"
+                  type="text"
+                  value={customerName}
+                  onChange={(e) => {
+                    setCustomerName(e.target.value);
+                    if (errors.customerName) {
+                      setErrors((prev) => ({ ...prev, customerName: '' }));
+                    }
+                  }}
+                  placeholder="Tên khách hàng (ví dụ: Chị Lan, Cô dâu My...)"
+                  className={`w-full h-9 px-3 rounded-xl ${inputBg} border border-transparent focus:outline-none text-[13.5px] font-medium ${textPrimary} placeholder:${textSecondary} placeholder:text-[12.5px]`}
+                  style={{
+                    borderColor: errors.customerName ? '#FF3B30' : undefined
+                  }}
+                />
+                {errors.customerName && (
+                  <p className="text-[11px] text-[#FF3B30] font-medium mt-0.5">{errors.customerName}</p>
+                )}
+              </div>
+
+              {/* Dòng 2: Thông tin chi tiết (chú thích mờ trong ô, kèm nút Dán thông minh) */}
+              <div className="relative">
+                <textarea
+                  ref={textareaRef}
+                  id="booking-input-makeup-info"
+                  rows={3}
+                  value={makeupInfo}
+                  onChange={(e) => handleMakeupInfoChange(e.target.value)}
+                  placeholder="Thông tin chi tiết (địa chỉ, số lượng, phong cách, ghi chú...)"
+                  className={`w-full p-2.5 pb-8 rounded-xl ${inputBg} border border-transparent focus:outline-none text-[13.5px] ${textPrimary} leading-relaxed min-h-[85px] resize-none overflow-hidden placeholder:${textSecondary} placeholder:text-[12.5px]`}
+                  style={{
+                    borderColor: errors.makeupInfo ? '#FF3B30' : undefined
+                  }}
+                />
+                {/* Nút 'Dán' thông minh ở góc dưới bên phải bên trong khung nhập nội dung */}
+                <button
+                  type="button"
+                  id="btn-smart-paste-makeup-info"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={handleSmartPaste}
+                  title="Dán từ bộ nhớ tạm"
+                  className={`absolute right-2 bottom-2 h-6 px-2.5 rounded-md border text-[11px] font-bold flex items-center gap-1 shadow-2xs transition-all cursor-pointer active:scale-95 z-10 select-none touch-manipulation ${
+                    isDark
+                      ? 'bg-[#3A3A3C] hover:bg-[#48484A] border-[#48484A] text-white'
+                      : 'bg-white hover:bg-[#F2F2F7] border-[#D1D1D6] text-[#1C1C1E]'
+                  }`}
+                >
+                  <Clipboard className="w-3 h-3" style={{ color: accentConfig.hex }} />
+                  <span>Dán</span>
+                </button>
+              </div>
             </div>
+
             {detectedPhone && (
               <div className="flex items-center gap-1.5 text-[11px] text-[#34C759] font-semibold bg-[#34C759]/10 px-2 py-0.5 rounded-md w-fit">
                 <Check className="w-3 h-3 stroke-[2.5]" />

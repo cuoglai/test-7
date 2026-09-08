@@ -110,12 +110,23 @@ export const BookingDetailModal: React.FC<BookingDetailModalProps> = ({
               </div>
             </div>
 
-            {/* 3. Toàn bộ Thông tin lịch make */}
+            {/* 2. Tên khách hàng */}
+            <div className={`${cardBg} p-3.5 rounded-2xl border ${cardBorder}`}>
+              <span className={`text-[11px] font-bold uppercase tracking-wider ${textSecondary} flex items-center gap-1.5 mb-1`}>
+                <User className="w-3.5 h-3.5" style={{ color: accentConfig.hex }} />
+                Tên khách hàng
+              </span>
+              <h2 className={`text-[17px] font-bold ${textPrimary}`}>
+                {booking.customerName || 'Khách makeup'}
+              </h2>
+            </div>
+
+            {/* 3. Thông tin chi tiết */}
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
                 <p className={`text-[11px] font-bold tracking-wider uppercase ${textSecondary} flex items-center gap-1.5`}>
                   <FileText className="w-3.5 h-3.5" style={{ color: accentConfig.hex }} />
-                  Thông tin lịch make
+                  Thông tin chi tiết
                 </p>
                 <button
                   type="button"
@@ -139,7 +150,7 @@ export const BookingDetailModal: React.FC<BookingDetailModalProps> = ({
 
               <div className={`p-4 rounded-2xl ${cardBg} border ${cardBorder} shadow-2xs`}>
                 <p className={`text-[15px] ${textPrimary} leading-relaxed whitespace-pre-wrap font-normal select-text`}>
-                  {fullMakeupInfo || 'Không có thông tin lịch'}
+                  {fullMakeupInfo || 'Không có thông tin chi tiết'}
                 </p>
               </div>
 

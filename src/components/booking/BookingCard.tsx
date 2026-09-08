@@ -32,18 +32,56 @@ export const BookingCard: React.FC<BookingCardProps> = ({
     return booking.date < todayStr;
   }, [isPast, booking.date]);
 
-  // Display title: [Khách] - [Gói make]
-  const displayTitle = `${booking.customerName} - ${booking.packageNameSnapshot || 'Gói Makeup'}`;
+  // Tên khách hàng hiển thị ở dòng đầu tiên
+  const customerName = booking.customerName || 'Khách makeup';
 
-  // Information preview snippet
-  const fullInfo = [
-    booking.customerAddress || '',
-    booking.note || ''
-  ].filter(Boolean).join(' – ');
+  // Thông tin chi tiết hiển thị ở dòng nhỏ hơn ở dưới
+  const detailsSnippet = React.useMemo(() => {
+    let text = (booking.makeupInfo || '').trim();
 
-  const infoSnippet = booking.makeupInfo
-    ? booking.makeupInfo.replace(/\n+/g, ' – ')
-    : fullInfo;
+    if (text) {
+      // Nếu text có nhiều dòng và dòng đầu tiên trùng tên khách thì bỏ dòng đó để tránh lặp
+      const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
+      if (lines.length > 1) {
+        const first = lines[0].toLowerCase();
+        const custNameLower = customerName.toLowerCase().trim();
+        if (
+          first === custNameLower ||
+          first.replace(/^(tên\s*khách|tên|khách(?:\s*hàng)?)\s*[:：\-]\s*/i, '') === custNameLower
+        ) {
+          text = lines.slice(1).join(' – ');
+        } else {
+          text = lines.join(' – ');
+        }
+      } else {
+        // Nếu chỉ có 1 dòng mà bắt đầu bằng tên khách hàng kèm gạch nối (ví dụ: "Chị Lan - Make tiệc...")
+        const custNameLower = customerName.toLowerCase().trim();
+        if (custNameLower && text.toLowerCase().startsWith(custNameLower)) {
+          const after = text.slice(custNameLower.length).replace(/^[\s\-–—:|]+/, '').trim();
+          if (after) {
+            text = after;
+          }
+        }
+      }
+    }
+
+    if (text) {
+      return text.replace(/\n+/g, ' – ');
+    }
+
+    // Fallback nếu không có thông tin lịch riêng: hiển thị gói makeup, địa chỉ, ghi chú
+    const fallbackParts = [
+      booking.packageNameSnapshot && booking.packageNameSnapshot !== 'Makeup'
+        ? booking.packageNameSnapshot
+        : '',
+      booking.customerAddress || '',
+      booking.note || ''
+    ].filter(Boolean);
+
+    return fallbackParts.length > 0
+      ? fallbackParts.join(' – ')
+      : (booking.packageNameSnapshot || 'Chi tiết ca makeup');
+  }, [booking.makeupInfo, customerName, booking.packageNameSnapshot, booking.customerAddress, booking.note]);
 
   const isCompleted = booking.status === 'completed' || booking.status === 'paid';
 
@@ -100,10 +138,10 @@ export const BookingCard: React.FC<BookingCardProps> = ({
       <div
         className={`flex-1 min-w-0 ${cardBg} px-3 py-2 rounded-xl border ${borderShadowClasses} ${borderLeftColor} hover:opacity-95 active:scale-[0.99] transition-all`}
       >
-        {/* Hàng trên: Tiêu đề + Giá tiền + Trạng thái */}
+        {/* Hàng 1: Tên khách hàng + Giá tiền + Trạng thái */}
         <div className="flex justify-between items-center gap-1.5 mb-0.5">
           <h3 className={`font-bold text-[14.5px] sm:text-[15px] ${textPrimary} leading-snug truncate`}>
-            {displayTitle}
+            {customerName}
           </h3>
           <div className="flex items-center gap-1 shrink-0">
             <span className="text-[10.5px] font-mono px-1.5 py-0.5 rounded-md font-black text-[#34C759] bg-[#34C759]/10">
@@ -123,9 +161,9 @@ export const BookingCard: React.FC<BookingCardProps> = ({
           </div>
         </div>
 
-        {/* Thông tin ngắn / Ghi chú */}
+        {/* Hàng 2: Dòng nhỏ hơn ở dưới là thông tin chi tiết */}
         <p className={`text-[12px] sm:text-[12.5px] ${textBody} my-1 line-clamp-1 font-normal leading-tight`}>
-          {infoSnippet}
+          {detailsSnippet}
         </p>
 
         {/* Metadata dưới cùng: Ngày (nếu trong tab Booking) + Người thực hiện + Nhắc nhở + Nút gọi */}

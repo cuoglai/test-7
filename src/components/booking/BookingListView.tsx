@@ -2,10 +2,12 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { motion } from 'motion/react';
 import { Booking } from '../../types';
 import { BookingCard } from './BookingCard';
-import { Search, X, ClipboardList, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Search, X, ClipboardList, ChevronLeft, ChevronRight, ArrowUpDown, ChevronDown, Check, Clock, Edit3 } from 'lucide-react';
 import { findCTVConflicts } from '../../services/conflictService';
 import { useTheme, hexToRgba } from '../../contexts/ThemeContext';
 import { formatBookingCardDate } from '../../utils/formatters';
+
+export type BookingSortOrder = 'default' | 'created' | 'updated';
 
 interface BookingListViewProps {
   bookings: Booking[];
@@ -24,6 +26,15 @@ export const BookingListView: React.FC<BookingListViewProps> = ({
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState<'all' | 'owner' | 'ctv'>('all');
   const [direction, setDirection] = useState<number>(0);
+
+  // Bộ lọc sắp xếp: mặc định (theo ngày diễn ra), ngày tạo (mới nhất), ngày sửa (mới nhất)
+  const [sortOrder, setSortOrder] = useState<BookingSortOrder>('default');
+  const [isSortMenuOpen, setIsSortMenuOpen] = useState(false);
+
+  // Khi từ tab khác chuyển sang tab Booking, luôn đặt về lựa chọn 'mặc định'
+  useEffect(() => {
+    setSortOrder('default');
+  }, []);
 
   // Thanh chuyển tháng: Mặc định chọn tháng hiện tại
   const [currentYear, setCurrentYear] = useState<number>(() => new Date().getFullYear());
@@ -328,7 +339,7 @@ export const BookingListView: React.FC<BookingListViewProps> = ({
     });
   }, [monthBookings, searchTerm, filterType]);
 
-  // Nhóm danh sách bookings theo ngày để phân chia khung màu xen kẽ
+  // Nhóm danh sách bookings theo ngày để phân chia khung màu xen kẽ (cho chế độ Mặc định)
   const groupedBookings = useMemo(() => {
     const map = new Map<string, Booking[]>();
     filteredBookings.forEach((b) => {
@@ -343,6 +354,49 @@ export const BookingListView: React.FC<BookingListViewProps> = ({
       bookings: items.sort((a, b) => a.startTime.localeCompare(b.startTime))
     }));
   }, [filteredBookings]);
+
+  // Sắp xếp danh sách booking theo Ngày tạo mới nhất hoặc Ngày sửa đổi mới nhất
+  const sortedBookings = useMemo(() => {
+    if (sortOrder === 'default') return [];
+    const list = [...filteredBookings];
+    if (sortOrder === 'created') {
+      // Ngày tạo mới nhất lên đầu
+      list.sort((a, b) => {
+        const timeA = a.createdAt || 0;
+        const timeB = b.createdAt || 0;
+        if (timeB !== timeA) return timeB - timeA;
+        return (b.date + b.startTime).localeCompare(a.date + a.startTime);
+      });
+    } else if (sortOrder === 'updated') {
+      // Ngày sửa đổi mới nhất lên đầu
+      list.sort((a, b) => {
+        const timeA = a.updatedAt || a.createdAt || 0;
+        const timeB = b.updatedAt || b.createdAt || 0;
+        if (timeB !== timeA) return timeB - timeA;
+        return (b.date + b.startTime).localeCompare(a.date + a.startTime);
+      });
+    }
+    return list;
+  }, [filteredBookings, sortOrder]);
+
+  const handleSelectSortOrder = (newOrder: BookingSortOrder) => {
+    setSortOrder(newOrder);
+    setIsSortMenuOpen(false);
+    if (scrollContainerRef.current) {
+      scrollContainerRef.current.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  };
+
+  const formatTimestamp = (timestamp?: number) => {
+    if (!timestamp) return 'Chưa có';
+    const d = new Date(timestamp);
+    const hours = String(d.getHours()).padStart(2, '0');
+    const mins = String(d.getMinutes()).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const year = d.getFullYear();
+    return `${hours}:${mins} • ${day}/${month}/${year}`;
+  };
 
   // 3. Tự động xác định vị trí của lịch hẹn đầu tiên của ngày hôm nay (hoặc lịch hẹn chưa diễn ra gần nhất)
   const targetScrollDate = useMemo(() => {
@@ -539,27 +593,122 @@ export const BookingListView: React.FC<BookingListViewProps> = ({
           </div>
         </div>
 
-        {/* Hàng 3: Ô tìm kiếm thu gọn - Đẩy sát lên */}
-        <div className="relative">
-          <Search className={`w-3.5 h-3.5 ${textSecondary} absolute left-3 top-1/2 -translate-y-1/2`} />
-          <input
-            id="booking-search-input"
-            type="text"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Tìm theo tên, SĐT, địa chỉ, ghi chú..."
-            className={`w-full h-8 rounded-xl ${inputBg} text-[12.5px] ${textPrimary} placeholder:${textSecondary} focus:outline-none focus:ring-1 focus:ring-[var(--color-accent)] border border-transparent pl-8.5 pr-8`}
-          />
-          {searchTerm && (
+        {/* Hàng 3: Ô tìm kiếm + Lựa chọn lọc sắp xếp (Mặc định / Ngày tạo / Ngày sửa) */}
+        <div className="flex items-center gap-1.5 relative">
+          <div className="relative flex-1 min-w-0">
+            <Search className={`w-3.5 h-3.5 ${textSecondary} absolute left-3 top-1/2 -translate-y-1/2`} />
+            <input
+              id="booking-search-input"
+              type="text"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="Tìm theo tên, SĐT, địa chỉ, ghi chú..."
+              className={`w-full h-8 rounded-xl ${inputBg} text-[12.5px] ${textPrimary} placeholder:${textSecondary} focus:outline-none focus:ring-1 focus:ring-[var(--color-accent)] border border-transparent pl-8.5 pr-7`}
+            />
+            {searchTerm && (
+              <button
+                id="clear-search-btn"
+                type="button"
+                onClick={() => setSearchTerm('')}
+                className={`absolute right-2 top-1/2 -translate-y-1/2 ${textSecondary} hover:${textPrimary} p-0.5`}
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+
+          {/* Lựa chọn sắp xếp / lọc: Mặc định, Ngày tạo, Ngày sửa */}
+          <div className="relative shrink-0">
             <button
-              id="clear-search-btn"
+              id="booking-sort-selector-btn"
               type="button"
-              onClick={() => setSearchTerm('')}
-              className={`absolute right-2.5 top-1/2 -translate-y-1/2 ${textSecondary} hover:${textPrimary}`}
+              onClick={() => setIsSortMenuOpen((prev) => !prev)}
+              style={{
+                backgroundColor: sortOrder !== 'default' ? accentConfig.hex : undefined,
+                color: sortOrder !== 'default' ? '#FFFFFF' : undefined
+              }}
+              className={`h-8 px-2 sm:px-2.5 rounded-xl border flex items-center gap-1 text-[11.5px] font-bold transition-all cursor-pointer select-none active:scale-95 ${
+                sortOrder !== 'default'
+                  ? 'border-transparent shadow-xs'
+                  : `${cardBorder} ${inputBg} ${textPrimary} hover:opacity-90`
+              }`}
             >
-              <X className="w-3.5 h-3.5" />
+              <ArrowUpDown className="w-3.5 h-3.5 shrink-0" />
+              <span className="whitespace-nowrap">
+                {sortOrder === 'default'
+                  ? 'Mặc định'
+                  : sortOrder === 'created'
+                  ? 'Ngày tạo'
+                  : 'Ngày sửa'}
+              </span>
+              <ChevronDown className={`w-3 h-3 transition-transform duration-200 shrink-0 ${isSortMenuOpen ? 'rotate-180' : ''}`} />
             </button>
-          )}
+
+            {/* Dropdown 3 lựa chọn */}
+            {isSortMenuOpen && (
+              <>
+                <div
+                  className="fixed inset-0 z-40"
+                  onClick={() => setIsSortMenuOpen(false)}
+                />
+                <div
+                  className={`absolute right-0 top-9.5 z-50 w-48 p-1.5 rounded-2xl border shadow-xl ${cardBorder} ${
+                    isDark ? 'bg-[#1C1C1E]' : 'bg-white'
+                  }`}
+                  style={{
+                    boxShadow: isDark
+                      ? '0 10px 25px -5px rgba(0, 0, 0, 0.7)'
+                      : '0 10px 25px -5px rgba(0, 0, 0, 0.15)'
+                  }}
+                >
+                  {[
+                    { id: 'default', label: 'Mặc định', desc: 'Theo lịch hẹn diễn ra' },
+                    { id: 'created', label: 'Ngày tạo', desc: 'Lịch mới tạo lên đầu' },
+                    { id: 'updated', label: 'Ngày sửa', desc: 'Lịch mới sửa lên đầu' }
+                  ].map((opt) => {
+                    const isSelected = sortOrder === opt.id;
+                    return (
+                      <button
+                        key={opt.id}
+                        id={`sort-option-${opt.id}`}
+                        type="button"
+                        onClick={() => handleSelectSortOrder(opt.id as BookingSortOrder)}
+                        className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl text-left transition-colors cursor-pointer ${
+                          isSelected
+                            ? isDark
+                              ? 'bg-white/10'
+                              : 'bg-black/5'
+                            : isDark
+                            ? 'hover:bg-white/5'
+                            : 'hover:bg-black/4'
+                        }`}
+                      >
+                        <div className="flex flex-col">
+                          <span
+                            className="text-[12.5px] font-bold"
+                            style={{
+                              color: isSelected ? accentConfig.hex : undefined
+                            }}
+                          >
+                            {opt.label}
+                          </span>
+                          <span className={`text-[10px] ${textSecondary}`}>
+                            {opt.desc}
+                          </span>
+                        </div>
+                        {isSelected && (
+                          <Check
+                            className="w-4 h-4 shrink-0"
+                            style={{ color: accentConfig.hex }}
+                          />
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </div>
 
@@ -609,6 +758,79 @@ export const BookingListView: React.FC<BookingListViewProps> = ({
               + Tạo booking mới
             </button>
           </div>
+        ) : sortOrder !== 'default' ? (
+          /* Hiển thị danh sách khi lọc theo Ngày tạo hoặc Ngày sửa mới nhất */
+          sortedBookings.map((booking) => {
+            const conflicts = findCTVConflicts(bookings, {
+              id: booking.id,
+              date: booking.date,
+              startTime: booking.startTime,
+              endTime: booking.endTime,
+              performerType: booking.performerType,
+              ctvId: booking.ctvId
+            });
+
+            const cardDate = formatBookingCardDate(booking.date);
+            const isPastDay = booking.date < todayStr;
+
+            return (
+              <div
+                key={booking.id}
+                id={`sorted-booking-${booking.id}`}
+                style={{
+                  backgroundColor: isPastDay
+                    ? 'transparent'
+                    : isDark
+                    ? 'rgba(255,255,255,0.03)'
+                    : hexToRgba(accentConfig.hex, 0.08),
+                  borderColor: isPastDay
+                    ? isDark ? '#2C2C2E' : '#E5E5EA'
+                    : hexToRgba(accentConfig.hex, 0.25)
+                }}
+                className="p-3 sm:p-3.5 rounded-2xl border transition-all space-y-2.5 shadow-2xs"
+              >
+                {/* Header hiển thị ngày tạo hoặc ngày sửa */}
+                <div className="flex items-center justify-between px-1">
+                  <div className="flex items-center gap-1.5 text-[12px] font-bold">
+                    {sortOrder === 'created' ? (
+                      <>
+                        <Clock className="w-3.5 h-3.5 shrink-0" style={{ color: accentConfig.hex }} />
+                        <span style={{ color: accentConfig.hex }}>Ngày tạo:</span>
+                        <span className={textPrimary}>{formatTimestamp(booking.createdAt)}</span>
+                      </>
+                    ) : (
+                      <>
+                        <Edit3 className="w-3.5 h-3.5 shrink-0" style={{ color: accentConfig.hex }} />
+                        <span style={{ color: accentConfig.hex }}>Ngày sửa:</span>
+                        <span className={textPrimary}>{formatTimestamp(booking.updatedAt || booking.createdAt)}</span>
+                      </>
+                    )}
+                  </div>
+
+                  <span
+                    className="px-2 py-0.5 rounded-lg text-[11px] font-bold shadow-2xs"
+                    style={{
+                      backgroundColor: isDark
+                        ? 'rgba(255,255,255,0.08)'
+                        : 'rgba(0,0,0,0.06)',
+                      color: textPrimary
+                    }}
+                  >
+                    Hẹn: {cardDate.dayOfWeek} {cardDate.dayMonth}
+                  </span>
+                </div>
+
+                {/* Thẻ chi tiết ca make */}
+                <BookingCard
+                  booking={booking}
+                  hasConflict={conflicts.length > 0}
+                  onSelect={onSelectBooking}
+                  showDate={false}
+                  isPast={isPastDay}
+                />
+              </div>
+            );
+          })
         ) : (
           groupedBookings.map((group, groupIdx) => {
             const isOdd = groupIdx % 2 === 1;
@@ -691,7 +913,7 @@ export const BookingListView: React.FC<BookingListViewProps> = ({
                         booking={booking}
                         hasConflict={conflicts.length > 0}
                         onSelect={onSelectBooking}
-                        showDate={true}
+                        showDate={false}
                         isPast={isPastDay}
                       />
                     );

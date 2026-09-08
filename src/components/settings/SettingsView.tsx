@@ -141,20 +141,36 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const handleRequestNotif = async () => {
     const status = await requestNotificationPermission();
     setNotifPerm(status);
-    if (status === 'granted') {
-      await showBrowserNotification(
-        '🔔 Ynii Makeup: Đã bật thông báo!',
-        'Hệ thống sẽ kích hoạt rung và chuông nhắc khi đến giờ ca makeup của bạn.'
-      );
-    }
   };
 
   const handleTestNotif = async () => {
     setIsTestingNotif(true);
-    await showBrowserNotification(
-      '🔔 Ynii Makeup: Thử nghiệm chuông & rung',
-      'Chuông và rung hoạt động chính xác! Bạn sẽ luôn nhận được thông báo ngay cả khi thu nhỏ ứng dụng.'
-    );
+
+    const d = new Date();
+    const todayStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+    // Lấy đúng 1 ca makeup thực tế: ca makeup hôm nay hoặc chưa diễn ra gần nhất, hoặc ca đầu tiên
+    const targetBooking =
+      bookings.find((b) => b.status !== 'cancelled' && b.date >= todayStr) ||
+      bookings.find((b) => b.status !== 'cancelled') ||
+      bookings[0];
+
+    if (targetBooking) {
+      const [year, month, day] = (targetBooking.date || '').split('-');
+      const formattedDate = day && month ? `${day}/${month}` : targetBooking.date;
+      await showBrowserNotification(
+        `🔔 Lịch makeup: ${targetBooking.customerName} (${targetBooking.startTime})`,
+        `Gói: ${targetBooking.packageNameSnapshot || 'Makeup'} • ${targetBooking.customerAddress || 'Tại tiệm'} • Ngày ${formattedDate}. Bấm để xem chi tiết!`,
+        { bookingId: targetBooking.id }
+      );
+    } else {
+      await showBrowserNotification(
+        '🔔 Lịch makeup: Nguyễn Lan (08:30)',
+        'Gói: Makeup cô dâu • Số 18 Dịch Vọng Hậu, Cầu Giấy. Bấm để xem chi tiết!',
+        { bookingId: 'b-01' }
+      );
+    }
+
     setTimeout(() => setIsTestingNotif(false), 900);
   };
 

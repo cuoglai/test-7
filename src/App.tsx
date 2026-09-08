@@ -104,6 +104,57 @@ function AppContent() {
     registerServiceWorker();
   }, []);
 
+  // Xử lý sự kiện bấm vào thông báo để hiển thị chi tiết ca make
+  useEffect(() => {
+    const handleOpenBookingDetail = (bookingId: string) => {
+      if (!bookingId) return;
+      const target = bookings.find((b) => b.id === bookingId);
+      if (target) {
+        setSelectedBooking(target);
+      }
+    };
+
+    // 1. Nhận thông điệp từ Service Worker (khi người dùng bấm thông báo trên điện thoại/máy tính)
+    const handleSwMessage = (event: MessageEvent) => {
+      if (event.data?.type === 'OPEN_BOOKING_DETAIL' && event.data?.bookingId) {
+        handleOpenBookingDetail(event.data.bookingId);
+      }
+    };
+    if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
+      navigator.serviceWorker.addEventListener('message', handleSwMessage);
+    }
+
+    // 2. Nhận CustomEvent từ window Notification fallback
+    const handleCustomEvent = (event: Event) => {
+      const customEvt = event as CustomEvent<{ bookingId: string }>;
+      if (customEvt.detail?.bookingId) {
+        handleOpenBookingDetail(customEvt.detail.bookingId);
+      }
+    };
+    window.addEventListener('open-booking-detail', handleCustomEvent);
+
+    // 3. Kiểm tra tham số URL query nếu mở app từ trang mới qua notificationclick
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const bookingIdFromUrl = params.get('bookingId');
+      if (bookingIdFromUrl) {
+        handleOpenBookingDetail(bookingIdFromUrl);
+        // Xóa tham số khỏi URL để thanh địa chỉ sạch đẹp
+        const cleanUrl = window.location.pathname + window.location.hash;
+        window.history.replaceState({}, '', cleanUrl);
+      }
+    } catch {
+      // Ignored
+    }
+
+    return () => {
+      if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
+        navigator.serviceWorker.removeEventListener('message', handleSwMessage);
+      }
+      window.removeEventListener('open-booking-detail', handleCustomEvent);
+    };
+  }, [bookings]);
+
   // Tự động lên lịch thông báo đẩy / chuông nhắc cho các ca makeup sắp diễn ra
   useEffect(() => {
     const defaultRem = getDefaultReminder();

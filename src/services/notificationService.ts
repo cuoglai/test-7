@@ -112,7 +112,9 @@ export async function showBrowserNotification(
     return false;
   }
 
-  const tag = 'ynii-reminder-' + Date.now();
+  const tag = extraData?.bookingId
+    ? `booking-reminder-${extraData.bookingId}`
+    : 'ynii-single-reminder';
 
   // Ưu tiên gửi qua Service Worker để hiển thị ngay cả khi app đang thu nhỏ / chạy ngầm
   try {
@@ -139,11 +141,22 @@ export async function showBrowserNotification(
 
   // Fallback: window Notification
   try {
-    new Notification(title, {
+    const notif = new Notification(title, {
       body,
       icon: '/icon.svg',
-      tag
+      tag,
+      data: extraData || {}
     });
+    notif.onclick = () => {
+      window.focus();
+      if (extraData?.bookingId) {
+        window.dispatchEvent(
+          new CustomEvent('open-booking-detail', {
+            detail: { bookingId: extraData.bookingId }
+          })
+        );
+      }
+    };
     return true;
   } catch (e) {
     console.warn('Notification constructor error:', e);
@@ -213,7 +226,8 @@ export function scheduleBookingReminders(bookings: Booking[], defaultReminder: R
           delayMs,
           title: `🔔 Nhắc ca makeup: ${booking.customerName}`,
           body: `Lúc ${booking.startTime} hôm nay (${booking.packageNameSnapshot || 'Makeup'}). Vui lòng chuẩn bị!`,
-          tag
+          tag,
+          bookingId: booking.id
         });
       }
 

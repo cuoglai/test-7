@@ -475,7 +475,7 @@ export const RevenueView: React.FC<RevenueViewProps> = ({
                       <div className={`flex items-center gap-1.5 text-[12px] font-medium ${textSecondary}`}>
                         <Clock className="w-3.5 h-3.5" />
                         <span>
-                          {b.startTime} {b.endTime ? `– ${b.endTime}` : ''}
+                          {b.startTime}
                         </span>
                       </div>
 
@@ -485,7 +485,7 @@ export const RevenueView: React.FC<RevenueViewProps> = ({
                         <span className={textSecondary}>Người make:</span>
                         <span
                           className={`font-semibold ${
-                            b.performerType === 'ctv' ? 'text-[#5856D6]' : textPrimary
+                            b.performerType === 'ctv' ? 'text-[#FF9500]' : 'text-[#007AFF] dark:text-[#0A84FF]'
                           }`}
                         >
                           {b.performerType === 'owner'

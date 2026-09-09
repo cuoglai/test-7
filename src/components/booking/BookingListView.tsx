@@ -537,7 +537,7 @@ export const BookingListView: React.FC<BookingListViewProps> = ({
               type="button"
               onClick={() => handleSelectFilter('owner')}
               style={{
-                backgroundColor: filterType === 'owner' ? accentConfig.hex : 'transparent',
+                backgroundColor: filterType === 'owner' ? '#007AFF' : 'transparent',
                 color: filterType === 'owner' ? '#FFFFFF' : undefined
               }}
               className={`flex-1 flex items-center justify-center gap-1 py-1 px-2 rounded-lg text-[12px] font-semibold transition-all cursor-pointer select-none active:scale-[0.98] ${
@@ -567,7 +567,7 @@ export const BookingListView: React.FC<BookingListViewProps> = ({
               type="button"
               onClick={() => handleSelectFilter('ctv')}
               style={{
-                backgroundColor: filterType === 'ctv' ? '#5856D6' : 'transparent',
+                backgroundColor: filterType === 'ctv' ? '#FF9500' : 'transparent',
                 color: filterType === 'ctv' ? '#FFFFFF' : undefined
               }}
               className={`flex-1 flex items-center justify-center gap-1 py-1 px-2 rounded-lg text-[12px] font-semibold transition-all cursor-pointer select-none active:scale-[0.98] ${

@@ -187,7 +187,7 @@ export const BookingDetailModal: React.FC<BookingDetailModalProps> = ({
                   <User className="w-3 h-3" /> Người make
                 </p>
                 <p className={`text-[13px] font-bold truncate ${
-                  booking.performerType === 'ctv' ? 'text-[#5856D6]' : textPrimary
+                  booking.performerType === 'ctv' ? 'text-[#FF9500]' : 'text-[#007AFF] dark:text-[#0A84FF]'
                 }`}>
                   {booking.performerType === 'owner'
                     ? 'Tôi'

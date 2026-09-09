@@ -146,9 +146,9 @@ export function getStatusBadgeInfo(status: BookingStatus): {
     case 'assigned':
       return {
         label: 'Đã giao CTV',
-        badgeClass: 'bg-[#F5F5FB] text-[#5856D6] border border-[#5856D6]',
-        borderClass: 'border-[#5856D6]',
-        colorHex: '#5856D6'
+        badgeClass: 'bg-[#FFF9F2] text-[#FF9500] border border-[#FF9500]',
+        borderClass: 'border-[#FF9500]',
+        colorHex: '#FF9500'
       };
     case 'completed':
     case 'paid':

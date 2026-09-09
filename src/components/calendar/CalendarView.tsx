@@ -16,6 +16,8 @@ interface CalendarViewProps {
   onModeChange: (mode: CalendarMode) => void;
   onSelectBooking: (booking: Booking) => void;
   onOpenAddBooking: () => void;
+  filterType?: 'all' | 'owner' | 'ctv';
+  onFilterChange?: (filter: 'all' | 'owner' | 'ctv') => void;
 }
 
 export const CalendarView: React.FC<CalendarViewProps> = ({
@@ -26,10 +28,17 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   onDateChange,
   onModeChange,
   onSelectBooking,
-  onOpenAddBooking
+  onOpenAddBooking,
+  filterType: controlledFilterType,
+  onFilterChange: controlledOnFilterChange
 }) => {
-  // 3 Bộ lọc: 'all' (Tất cả) | 'owner' (Tôi) | 'ctv' (CTV)
-  const [filterType, setFilterType] = useState<'all' | 'owner' | 'ctv'>('all');
+  // 3 Bộ lọc: 'all' (Tất cả) | 'owner' (Tôi) | 'ctv' (CTV) - Mặc định hiển thị Lịch của tôi ('owner')
+  const [internalFilterType, setInternalFilterType] = useState<'all' | 'owner' | 'ctv'>('owner');
+  const filterType = controlledFilterType !== undefined ? controlledFilterType : internalFilterType;
+  const setFilterType = (newFilter: 'all' | 'owner' | 'ctv') => {
+    setInternalFilterType(newFilter);
+    controlledOnFilterChange?.(newFilter);
+  };
 
   // Navigation helper
   const handlePrev = () => {

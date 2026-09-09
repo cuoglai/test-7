@@ -31,7 +31,16 @@ function AppContent() {
 
   // Navigation & Calendar states
   const [activeTab, setActiveTab] = useState<ActiveTab>('calendar');
-  const [calendarMode, setCalendarMode] = useState<CalendarMode>('day');
+  const [calendarMode, setCalendarMode] = useState<CalendarMode>('month');
+  const [calendarFilter, setCalendarFilter] = useState<'all' | 'owner' | 'ctv'>('owner');
+
+  const handleTabChange = (tab: ActiveTab) => {
+    if (tab === 'calendar') {
+      setCalendarMode('month');
+      setCalendarFilter('owner');
+    }
+    setActiveTab(tab);
+  };
 
   // Today's anchor date
   const todayDateStr = useMemo(() => {
@@ -187,6 +196,8 @@ function AppContent() {
               mode={calendarMode}
               bookings={bookings}
               todayDateStr={todayDateStr}
+              filterType={calendarFilter}
+              onFilterChange={setCalendarFilter}
               onDateChange={setCurrentDate}
               onModeChange={setCalendarMode}
               onSelectBooking={(b) => setSelectedBooking(b)}
@@ -228,7 +239,7 @@ function AppContent() {
         {/* Bottom Tab Bar with Floating Action Button */}
         <BottomNav
           activeTab={activeTab}
-          onTabChange={setActiveTab}
+          onTabChange={handleTabChange}
           onOpenAddModal={handleOpenAddModal}
         />
 

@@ -1,11 +1,12 @@
 import React, { useState, useMemo } from 'react';
-import { Booking } from '../../types';
+import { Booking, CTV } from '../../types';
 import { formatKCurrency, formatRevenueM, formatCurrency, getBookingDisplayTitle } from '../../utils/formatters';
 import { useTheme } from '../../contexts/ThemeContext';
-import { ChevronLeft, ChevronRight, TrendingUp, Calendar, User, Clock, ArrowRight } from 'lucide-react';
+import { ChevronLeft, ChevronRight, TrendingUp, Calendar, User, Clock, ArrowRight, Users, ChevronDown, ChevronUp } from 'lucide-react';
 
 interface RevenueViewProps {
   bookings: Booking[];
+  ctvs?: CTV[];
   currentDate: string;
   onSelectBooking: (booking: Booking) => void;
   onOpenAddBooking: () => void;
@@ -24,11 +25,37 @@ const WEEKDAY_NAMES = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
 
 export const RevenueView: React.FC<RevenueViewProps> = ({
   bookings,
+  ctvs = [],
   currentDate,
   onSelectBooking,
   onOpenAddBooking
 }) => {
   const { isDark, accentConfig } = useTheme();
+
+  // Helper lấy chữ cái đầu tên CTV cho avatar
+  const getInitials = (fullName: string): string => {
+    if (!fullName) return 'CTV';
+    const clean = fullName.trim().replace(/^CTV\s+/i, '');
+    const parts = clean.split(/\s+/).filter(Boolean);
+    if (parts.length === 0) return 'CTV';
+    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  };
+
+  // State mở/thu gọn danh sách ca của từng CTV
+  const [expandedCtvIds, setExpandedCtvIds] = useState<Set<string>>(new Set());
+
+  const toggleCtvExpand = (id: string) => {
+    setExpandedCtvIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
 
   // Parse initial anchor date
   const [initialYear, initialMonth, initialDay] = useMemo(() => {
@@ -131,6 +158,112 @@ export const RevenueView: React.FC<RevenueViewProps> = ({
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   }, []);
+
+  // Thống kê doanh thu theo từng CTV trong tháng đã chọn
+  const completedMonthCTVBookings = useMemo(() => {
+    return bookings.filter(
+      (b) =>
+        b.status === 'completed' &&
+        b.performerType === 'ctv' &&
+        Boolean(b.date && b.date.startsWith(monthPrefix))
+    );
+  }, [bookings, monthPrefix]);
+
+  const totalCTVMonthRevenue = useMemo(() => {
+    return completedMonthCTVBookings.reduce((sum, b) => sum + getBookingRevenue(b), 0);
+  }, [completedMonthCTVBookings]);
+
+  const totalCTVMonthBookingsCount = completedMonthCTVBookings.length;
+
+  const ctvMonthlyStats = useMemo(() => {
+    const map = new Map<
+      string,
+      {
+        id: string;
+        name: string;
+        phone?: string;
+        bookings: Booking[];
+        totalRevenue: number;
+        totalCount: number;
+      }
+    >();
+
+    // Khởi tạo trước với danh sách CTV đã đăng ký trong hệ thống
+    (ctvs || []).forEach((c) => {
+      map.set(c.id, {
+        id: c.id,
+        name: c.name,
+        phone: c.phone,
+        bookings: [],
+        totalRevenue: 0,
+        totalCount: 0
+      });
+    });
+
+    // Phân bổ các ca hoàn thành của CTV trong tháng
+    completedMonthCTVBookings.forEach((b) => {
+      let key = '';
+      let name = b.ctvNameSnapshot || 'CTV';
+      let phone: string | undefined;
+
+      if (b.ctvId && map.has(b.ctvId)) {
+        key = b.ctvId;
+        name = map.get(b.ctvId)!.name;
+        phone = map.get(b.ctvId)!.phone;
+      } else if (b.ctvId) {
+        key = b.ctvId;
+        name = b.ctvNameSnapshot || 'CTV';
+      } else {
+        const matched = (ctvs || []).find(
+          (c) => c.name.trim().toLowerCase() === (b.ctvNameSnapshot || '').trim().toLowerCase()
+        );
+        if (matched) {
+          key = matched.id;
+          name = matched.name;
+          phone = matched.phone;
+        } else {
+          key = `snapshot-${(b.ctvNameSnapshot || 'unknown').trim()}`;
+          name = b.ctvNameSnapshot || 'Cộng tác viên';
+        }
+      }
+
+      if (!map.has(key)) {
+        map.set(key, {
+          id: key,
+          name,
+          phone,
+          bookings: [],
+          totalRevenue: 0,
+          totalCount: 0
+        });
+      }
+
+      const item = map.get(key)!;
+      item.bookings.push(b);
+      item.totalRevenue += getBookingRevenue(b);
+      item.totalCount += 1;
+    });
+
+    // Sắp xếp các ca của từng CTV theo ngày và giờ tăng dần
+    map.forEach((item) => {
+      item.bookings.sort((a, b) => {
+        const cmpDate = (a.date || '').localeCompare(b.date || '');
+        if (cmpDate !== 0) return cmpDate;
+        return (a.startTime || '').localeCompare(b.startTime || '');
+      });
+    });
+
+    // Chuyển thành mảng và sắp xếp: CTV có doanh thu cao nhất lên trước, sau đó là CTV chưa có ca
+    const list = Array.from(map.values());
+    list.sort((a, b) => {
+      if (a.totalCount > 0 && b.totalCount === 0) return -1;
+      if (a.totalCount === 0 && b.totalCount > 0) return 1;
+      if (b.totalRevenue !== a.totalRevenue) return b.totalRevenue - a.totalRevenue;
+      return a.name.localeCompare(b.name);
+    });
+
+    return list;
+  }, [ctvs, completedMonthCTVBookings]);
 
   // Theme styles
   const viewBg = isDark ? 'bg-[#000000]' : 'bg-[#F2F2F7]';
@@ -510,6 +643,201 @@ export const RevenueView: React.FC<RevenueViewProps> = ({
             </div>
           )}
         </div>
+
+        {/* ============================================================ */}
+        {/* DOANH THU THEO TỪNG CTV (THÁNG MM/YYYY)                      */}
+        {/* ============================================================ */}
+        {filter !== 'owner' ? (
+          <div className={`${cardBg} p-4 rounded-2xl border ${cardBorder} shadow-xs space-y-3`}>
+            {/* Header: Title & Total CTV monthly revenue */}
+            <div className="flex items-center justify-between pb-3 border-b" style={{ borderColor: isDark ? '#2C2C2E' : '#F2F2F7' }}>
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-lg bg-[#FF9500]/15 flex items-center justify-center text-[#FF9500]">
+                  <Users className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className={`text-[13px] sm:text-[14px] font-black ${textPrimary} uppercase tracking-wider flex items-center gap-1.5`}>
+                    Doanh thu từng CTV
+                  </h3>
+                  <span className={`text-[11px] font-medium ${textSecondary}`}>
+                    Tháng {String(month).padStart(2, '0')}/{year}
+                  </span>
+                </div>
+              </div>
+
+              <div className="text-right">
+                <span className="text-[15px] sm:text-[16px] font-black text-[#34C759] font-mono block">
+                  {formatCurrency(totalCTVMonthRevenue)}
+                </span>
+                <span className="text-[11px] font-semibold text-[#FF9500]">
+                  {totalCTVMonthBookingsCount} ca hoàn thành
+                </span>
+              </div>
+            </div>
+
+            {/* List of CTVs */}
+            {ctvMonthlyStats.length === 0 ? (
+              <div className="py-6 text-center">
+                <Users className={`w-8 h-8 ${textSecondary} mx-auto mb-2 opacity-40`} />
+                <p className={`text-[13px] font-medium ${textSecondary}`}>
+                  Chưa có thông tin cộng tác viên
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-2.5">
+                {ctvMonthlyStats.map((ctv) => {
+                  const isExpanded = expandedCtvIds.has(ctv.id);
+                  const initials = getInitials(ctv.name);
+                  const hasBookings = ctv.totalCount > 0;
+
+                  return (
+                    <div
+                      key={ctv.id}
+                      className={`rounded-xl border ${cardBorder} ${inputBg} overflow-hidden transition-all`}
+                    >
+                      {/* CTV Summary Row */}
+                      <div
+                        onClick={() => toggleCtvExpand(ctv.id)}
+                        className="p-3 flex items-center justify-between gap-3 cursor-pointer hover:opacity-95 active:scale-[0.99] transition-all select-none"
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                          {/* CTV Avatar */}
+                          <div className="w-9 h-9 rounded-full bg-[#FF9500]/15 border border-[#FF9500]/30 text-[#FF9500] font-black flex items-center justify-center text-[12px] shrink-0">
+                            {initials}
+                          </div>
+
+                          {/* CTV Info */}
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5">
+                              <span className={`text-[14px] font-bold ${textPrimary} truncate`}>
+                                CTV {ctv.name}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-2 text-[11px] mt-0.5">
+                              {ctv.phone && (
+                                <span className={textSecondary}>{ctv.phone}</span>
+                              )}
+                              {ctv.phone && <span className={textSecondary}>•</span>}
+                              <span
+                                className={`font-semibold ${
+                                  hasBookings ? 'text-[#FF9500]' : textSecondary
+                                }`}
+                              >
+                                {ctv.totalCount} ca hoàn thành
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Revenue & Expand Button */}
+                        <div className="flex items-center gap-2 shrink-0">
+                          <div className="text-right">
+                            <span
+                              className={`text-[15px] font-black font-mono block ${
+                                hasBookings ? 'text-[#34C759]' : textSecondary
+                              }`}
+                            >
+                              {formatCurrency(ctv.totalRevenue)}
+                            </span>
+                            <span className={`text-[10px] ${textSecondary}`}>
+                              {hasBookings ? (isExpanded ? 'Thu gọn' : 'Xem chi tiết') : 'Chưa có ca'}
+                            </span>
+                          </div>
+
+                          <div className={`w-6 h-6 rounded-full flex items-center justify-center ${cardBorder} text-[#8E8E93]`}>
+                            {isExpanded ? (
+                              <ChevronUp className="w-4 h-4" />
+                            ) : (
+                              <ChevronDown className="w-4 h-4" />
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Expanded Bookings List */}
+                      {isExpanded && (
+                        <div className="px-3 pb-3 pt-1 border-t space-y-2" style={{ borderColor: isDark ? '#2C2C2E' : '#E5E5EA' }}>
+                          {ctv.bookings.length === 0 ? (
+                            <p className={`text-[12px] italic ${textSecondary} py-2 text-center`}>
+                              Chưa có ca hoàn thành trong tháng {String(month).padStart(2, '0')}/{year}
+                            </p>
+                          ) : (
+                            ctv.bookings.map((b) => {
+                              const bRev = getBookingRevenue(b);
+                              const title = getBookingDisplayTitle(b);
+                              const [y, m, d] = (b.date || '').split('-');
+                              const formattedDate = d && m ? `${d}/${m}` : b.date;
+
+                              return (
+                                <div
+                                  key={b.id}
+                                  onClick={() => onSelectBooking(b)}
+                                  className={`p-2.5 rounded-lg border ${cardBorder} ${
+                                    isDark ? 'bg-[#1C1C1E] hover:bg-[#252528]' : 'bg-white hover:bg-gray-50'
+                                  } active:scale-[0.99] transition-all cursor-pointer flex items-center justify-between gap-2.5`}
+                                >
+                                  <div className="min-w-0 flex-1">
+                                    <div className="flex items-center gap-2 text-[11px] mb-0.5">
+                                      <span className="font-bold text-[#FF9500] px-1.5 py-0.5 rounded bg-[#FF9500]/10">
+                                        {formattedDate}
+                                      </span>
+                                      <span className={`font-medium ${textSecondary}`}>
+                                        {b.startTime}
+                                      </span>
+                                      {b.packageNameSnapshot && (
+                                        <span className={`truncate ${textSecondary} max-w-[120px]`}>
+                                          • {b.packageNameSnapshot}
+                                        </span>
+                                      )}
+                                    </div>
+
+                                    <p className={`text-[13px] font-bold ${textPrimary} truncate`}>
+                                      {title}
+                                    </p>
+                                  </div>
+
+                                  <div className="text-right shrink-0">
+                                    <span className="text-[13px] font-black text-[#34C759] font-mono block">
+                                      {formatCurrency(bRev)}
+                                    </span>
+                                    <span className={`text-[10px] ${textSecondary} flex items-center justify-end gap-0.5 hover:underline`}>
+                                      Chi tiết <ArrowRight className="w-2.5 h-2.5" />
+                                    </span>
+                                  </div>
+                                </div>
+                              );
+                            })
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        ) : (
+          /* Khi đang chọn bộ lọc 'Tôi', cung cấp nút chuyển nhanh để xem doanh thu CTV */
+          <div
+            onClick={() => setFilter('ctv')}
+            className={`${cardBg} p-3.5 rounded-2xl border ${cardBorder} flex items-center justify-between cursor-pointer hover:opacity-90 active:scale-[0.99] transition-all`}
+          >
+            <div className="flex items-center gap-2.5">
+              <div className="w-7 h-7 rounded-lg bg-[#FF9500]/15 flex items-center justify-center text-[#FF9500]">
+                <Users className="w-4 h-4" />
+              </div>
+              <div>
+                <span className={`text-[13px] font-bold ${textPrimary} block`}>
+                  Xem doanh thu của từng CTV tháng {String(month).padStart(2, '0')}/{year}
+                </span>
+                <span className={`text-[11px] ${textSecondary}`}>
+                  Tổng CTV: {formatCurrency(totalCTVMonthRevenue)} ({totalCTVMonthBookingsCount} ca)
+                </span>
+              </div>
+            </div>
+            <ArrowRight className="w-4 h-4 text-[#8E8E93]" />
+          </div>
+        )}
       </div>
     </div>
   );

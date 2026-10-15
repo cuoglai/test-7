@@ -1,8 +1,47 @@
 import { Booking, ReminderOption } from '../types';
 
 let swRegistration: ServiceWorkerRegistration | null = null;
-const scheduledTimerIds: number[] = [];
-const notifiedBookingTags = new Set<string>();
+const NOTIFIED_STORAGE_KEY = 'makeup_manager_notified_reminders_v1';
+
+// Quản lý các timer đang chạy ở client để chống đặt lặp
+const activeClientTimers = new Map<string, number>();
+// Quản lý các tag đã gửi sang Service Worker để không postMessage liên tục mỗi lần render
+const activeSwScheduledTags = new Set<string>();
+
+// Lấy danh sách các mã ca make đã thông báo từ localStorage
+export function getPersistedNotifiedTags(): Set<string> {
+  if (typeof window === 'undefined') return new Set();
+  try {
+    const raw = localStorage.getItem(NOTIFIED_STORAGE_KEY);
+    if (raw) {
+      const arr = JSON.parse(raw);
+      if (Array.isArray(arr)) return new Set(arr);
+    }
+  } catch (e) {
+    console.warn('Error reading notified tags:', e);
+  }
+  return new Set();
+}
+
+// Kiểm tra ca make đã từng thông báo chưa
+export function isBookingNotified(tag: string): boolean {
+  return getPersistedNotifiedTags().has(tag);
+}
+
+// Đánh dấu ca make đã thông báo để không bao giờ thông báo lại
+export function markBookingAsNotified(tag: string): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const tags = getPersistedNotifiedTags();
+    if (tags.has(tag)) return;
+    tags.add(tag);
+    // Giữ tối đa 500 tags gần nhất để tránh tốn bộ nhớ
+    const arr = Array.from(tags).slice(-500);
+    localStorage.setItem(NOTIFIED_STORAGE_KEY, JSON.stringify(arr));
+  } catch (e) {
+    console.warn('Error saving notified tag:', e);
+  }
+}
 
 // 1. Khởi tạo & Đăng ký Service Worker
 export async function registerServiceWorker(): Promise<ServiceWorkerRegistration | null> {
@@ -100,6 +139,15 @@ export async function showBrowserNotification(
   body: string,
   extraData?: Record<string, unknown>
 ): Promise<boolean> {
+  const tag = (extraData?.tag as string) || (extraData?.bookingId
+    ? `booking-reminder-${extraData.bookingId}`
+    : 'ynii-single-reminder');
+
+  // Nếu là thông báo lịch thực tế (có tag) và đã thông báo rồi -> bỏ qua không spam
+  if (extraData?.tag && isBookingNotified(extraData.tag as string)) {
+    return false;
+  }
+
   // Phát chuông và rung
   playNotificationChime();
   triggerDeviceVibration();
@@ -111,10 +159,6 @@ export async function showBrowserNotification(
   if (Notification.permission !== 'granted') {
     return false;
   }
-
-  const tag = extraData?.bookingId
-    ? `booking-reminder-${extraData.bookingId}`
-    : 'ynii-single-reminder';
 
   // Ưu tiên gửi qua Service Worker để hiển thị ngay cả khi app đang thu nhỏ / chạy ngầm
   try {
@@ -129,7 +173,7 @@ export async function showBrowserNotification(
         badge: '/icon.svg',
         vibrate: [300, 150, 300, 150, 300],
         tag,
-        renotify: true,
+        renotify: false, // TẮT renotify để không re-alert spam
         requireInteraction: true,
         data: extraData || {}
       });
@@ -182,22 +226,43 @@ function getReminderMinutes(option: ReminderOption): number {
   }
 }
 
-// 7. Đồng bộ & Lên lịch nhắc ca makeup cho các ca sắp tới
+// 7. Đồng bộ & Lên lịch nhắc ca makeup cho các ca sắp tới - ĐẢM BẢO DUY NHẤT 1 LẦN, KHÔNG SPAM
 export function scheduleBookingReminders(bookings: Booking[], defaultReminder: ReminderOption): void {
-  // Xóa các timer cũ
-  while (scheduledTimerIds.length > 0) {
-    const id = scheduledTimerIds.pop();
-    if (id) clearTimeout(id);
-  }
-
   if (typeof window === 'undefined' || !('Notification' in window) || Notification.permission !== 'granted') {
     return;
   }
 
+  // Đồng bộ danh sách đã thông báo sang Service Worker
+  if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+    navigator.serviceWorker.controller.postMessage({
+      type: 'SYNC_NOTIFIED_TAGS',
+      tags: Array.from(getPersistedNotifiedTags())
+    });
+  }
+
   const now = Date.now();
+  const validCurrentTags = new Set<string>();
 
   bookings.forEach((booking) => {
+    const tag = `booking-reminder-${booking.id}-${booking.date}-${booking.startTime}`;
+
+    // Nếu ca make bị hủy hoặc đã hoàn thành -> Không thông báo, hủy hẹn giờ nếu có
     if (booking.status === 'cancelled' || booking.status === 'completed') {
+      if (activeClientTimers.has(tag)) {
+        clearTimeout(activeClientTimers.get(tag));
+        activeClientTimers.delete(tag);
+      }
+      if (activeSwScheduledTags.has(tag)) {
+        if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+          navigator.serviceWorker.controller.postMessage({ type: 'CANCEL_REMINDER', tag });
+        }
+        activeSwScheduledTags.delete(tag);
+      }
+      return;
+    }
+
+    // 1. Nếu ca make này ĐÃ THÔNG BÁO RỒI -> Bỏ qua ngay lập tức, không thông báo lại
+    if (isBookingNotified(tag)) {
       return;
     }
 
@@ -213,35 +278,67 @@ export function scheduleBookingReminders(bookings: Booking[], defaultReminder: R
 
     const bookingStartTime = new Date(year, month - 1, day, hours, mins, 0).getTime();
     const reminderTargetTime = bookingStartTime - minutesBefore * 60 * 1000;
-
     const delayMs = reminderTargetTime - now;
-    const tag = `${booking.id}_${booking.date}_${booking.startTime}`;
 
-    // Nếu thời điểm nhắc nằm trong tương lai (tối đa trong vòng 48 tiếng) và chưa nhắc
-    if (delayMs > 0 && delayMs <= 48 * 60 * 60 * 1000 && !notifiedBookingTags.has(tag)) {
-      // 1. Hẹn giờ qua Service Worker (cho trường hợp app bị thu nhỏ / background)
+    // Nếu thời điểm nhắc đã trôi qua trong quá khứ -> đánh dấu đã qua để không bao giờ nhắc trễ
+    if (delayMs <= 0) {
+      markBookingAsNotified(tag);
+      return;
+    }
+
+    // Nếu thời điểm nhắc nằm trong tương lai (tối đa trong vòng 48 tiếng)
+    if (delayMs > 0 && delayMs <= 48 * 60 * 60 * 1000) {
+      validCurrentTags.add(tag);
+
+      // Trường hợp 1: Có Service Worker đang chạy -> Giao toàn bộ việc hẹn giờ cho SW
+      // Chỉ gửi postMessage 1 lần duy nhất cho mỗi ca make, không spam gửi lại mỗi render
       if (navigator.serviceWorker && navigator.serviceWorker.controller) {
-        navigator.serviceWorker.controller.postMessage({
-          type: 'SCHEDULE_REMINDER',
-          delayMs,
-          title: `🔔 Nhắc ca makeup: ${booking.customerName}`,
-          body: `Lúc ${booking.startTime} hôm nay (${booking.packageNameSnapshot || 'Makeup'}). Vui lòng chuẩn bị!`,
-          tag,
-          bookingId: booking.id
-        });
+        if (!activeSwScheduledTags.has(tag)) {
+          navigator.serviceWorker.controller.postMessage({
+            type: 'SCHEDULE_REMINDER',
+            delayMs,
+            title: `🔔 Nhắc ca makeup: ${booking.customerName}`,
+            body: `Lúc ${booking.startTime} hôm nay (${booking.packageNameSnapshot || 'Makeup'}). Vui lòng chuẩn bị!`,
+            tag,
+            bookingId: booking.id
+          });
+          activeSwScheduledTags.add(tag);
+        }
+      } else {
+        // Trường hợp 2: Chưa có SW -> Dùng client timer fallback (chỉ 1 timer duy nhất per tag)
+        if (!activeClientTimers.has(tag)) {
+          const timerId = window.setTimeout(() => {
+            activeClientTimers.delete(tag);
+            if (!isBookingNotified(tag)) {
+              markBookingAsNotified(tag);
+              showBrowserNotification(
+                `🔔 Nhắc ca makeup: ${booking.customerName}`,
+                `Lúc ${booking.startTime} (${booking.packageNameSnapshot || 'Makeup'}) tại ${booking.customerAddress || 'Địa chỉ khách'}.`,
+                { bookingId: booking.id, tag }
+              );
+            }
+          }, delayMs);
+
+          activeClientTimers.set(tag, timerId);
+        }
       }
-
-      // 2. Hẹn giờ bằng client timer
-      const timerId = window.setTimeout(() => {
-        notifiedBookingTags.add(tag);
-        showBrowserNotification(
-          `🔔 Nhắc ca makeup: ${booking.customerName}`,
-          `Lúc ${booking.startTime} (${booking.packageNameSnapshot || 'Makeup'}) tại ${booking.customerAddress || 'Địa chỉ khách'}.`,
-          { bookingId: booking.id }
-        );
-      }, delayMs);
-
-      scheduledTimerIds.push(timerId);
     }
   });
+
+  // Dọn dẹp các timer mồ côi (khi người dùng xóa ca make hoặc đổi ngày giờ)
+  for (const [tag, timerId] of activeClientTimers.entries()) {
+    if (!validCurrentTags.has(tag)) {
+      clearTimeout(timerId);
+      activeClientTimers.delete(tag);
+    }
+  }
+  for (const tag of activeSwScheduledTags) {
+    if (!validCurrentTags.has(tag)) {
+      if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+        navigator.serviceWorker.controller.postMessage({ type: 'CANCEL_REMINDER', tag });
+      }
+      activeSwScheduledTags.delete(tag);
+    }
+  }
 }
+

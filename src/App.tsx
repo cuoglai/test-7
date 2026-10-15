@@ -10,7 +10,7 @@ import { BookingDetailModal } from './components/booking/BookingDetailModal';
 import { BookingFormModal } from './components/booking/BookingFormModal';
 import { findCTVConflicts } from './services/conflictService';
 import { ThemeProvider, useTheme } from './contexts/ThemeContext';
-import { registerServiceWorker, scheduleBookingReminders } from './services/notificationService';
+import { registerServiceWorker, scheduleBookingReminders, markBookingAsNotified, playNotificationChime } from './services/notificationService';
 import { getDefaultReminder } from './services/storageService';
 
 function AppContent() {
@@ -123,10 +123,15 @@ function AppContent() {
       }
     };
 
-    // 1. Nhận thông điệp từ Service Worker (khi người dùng bấm thông báo trên điện thoại/máy tính)
+    // 1. Nhận thông điệp từ Service Worker (khi người dùng bấm thông báo trên điện thoại/máy tính hoặc khi thông báo kích hoạt)
     const handleSwMessage = (event: MessageEvent) => {
       if (event.data?.type === 'OPEN_BOOKING_DETAIL' && event.data?.bookingId) {
         handleOpenBookingDetail(event.data.bookingId);
+      } else if (event.data?.type === 'REMINDER_NOTIFIED' && event.data?.tag) {
+        markBookingAsNotified(event.data.tag);
+        if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+          playNotificationChime();
+        }
       }
     };
     if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
@@ -216,6 +221,7 @@ function AppContent() {
           {activeTab === 'revenue' && (
             <RevenueView
               bookings={bookings}
+              ctvs={ctvs}
               currentDate={currentDate}
               onSelectBooking={(b) => setSelectedBooking(b)}
               onOpenAddBooking={handleOpenAddModal}

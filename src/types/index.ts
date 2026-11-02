@@ -1,4 +1,12 @@
-export type BookingStatus = 'deposited' | 'assigned' | 'completed' | 'paid' | 'cancelled';
+export type BookingStatus =
+  | 'deposited'      // Đã cọc
+  | 'looking_ctv'    // Đang tìm CTV
+  | 'assigned_ctv'   // Đã giao CTV
+  | 'rescheduled'    // Dời lịch
+  | 'cancelled'      // Hủy
+  | 'completed'      // Hoàn thành
+  | 'assigned'       // Legacy compatibility
+  | 'paid';          // Legacy compatibility
 
 export type PerformerType = 'owner' | 'ctv';
 
@@ -47,6 +55,7 @@ export interface Booking {
   startTime: string; // HH:mm
   endTime: string; // HH:mm
   quantity: number;
+  customerCount?: number; // Số lượng khách
   
   // Verbatim makeup info (full note containing customer, service, financial info)
   makeupInfo?: string;

@@ -1,11 +1,11 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { Booking } from '../../types';
+import { Booking, BookingStatus } from '../../types';
 import { BookingCard } from './BookingCard';
 import { Search, X, ClipboardList, ChevronLeft, ChevronRight, ArrowUpDown, ChevronDown, Check, Clock, Edit3 } from 'lucide-react';
 import { findCTVConflicts } from '../../services/conflictService';
 import { useTheme, hexToRgba } from '../../contexts/ThemeContext';
-import { formatBookingCardDate } from '../../utils/formatters';
+import { formatBookingCardDate, BOOKING_STATUS_LIST, getStatusBadgeInfo } from '../../utils/formatters';
 
 export type BookingSortOrder = 'default' | 'created' | 'updated';
 
@@ -25,6 +25,7 @@ export const BookingListView: React.FC<BookingListViewProps> = ({
   const { isDark, accentConfig } = useTheme();
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState<'all' | 'owner' | 'ctv'>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | BookingStatus>('all');
   const [direction, setDirection] = useState<number>(0);
 
   // Bộ lọc sắp xếp: mặc định (theo ngày diễn ra), ngày tạo (mới nhất), ngày sửa (mới nhất)
@@ -316,13 +317,44 @@ export const BookingListView: React.FC<BookingListViewProps> = ({
     return { totalCount, ownerCount, ctvCount };
   }, [monthBookings]);
 
-  // Lọc theo người làm & tìm kiếm trong tháng
+  // Thống kê số lượng ca theo từng trạng thái trong tháng
+  const statusCounts = useMemo(() => {
+    const counts: Record<string, number> = { all: monthBookings.length };
+    BOOKING_STATUS_LIST.forEach((s) => {
+      counts[s.key] = 0;
+    });
+    monthBookings.forEach((b) => {
+      const normalized =
+        b.status === 'assigned'
+          ? 'assigned_ctv'
+          : b.status === 'paid'
+          ? 'completed'
+          : b.status;
+      if (counts[normalized] !== undefined) {
+        counts[normalized] += 1;
+      }
+    });
+    return counts;
+  }, [monthBookings]);
+
+  // Lọc theo người làm, trạng thái & tìm kiếm trong tháng
   const filteredBookings = useMemo(() => {
     const term = searchTerm.toLowerCase().trim();
     return monthBookings.filter((b) => {
       // Filter by performer type
       if (filterType === 'owner' && b.performerType !== 'owner') return false;
       if (filterType === 'ctv' && b.performerType !== 'ctv') return false;
+
+      // Filter by status (6 trạng thái)
+      if (statusFilter !== 'all') {
+        const normalized =
+          b.status === 'assigned'
+            ? 'assigned_ctv'
+            : b.status === 'paid'
+            ? 'completed'
+            : b.status;
+        if (normalized !== statusFilter) return false;
+      }
 
       // Search by name, makeupInfo, note, phone, address
       const matchText =
@@ -337,7 +369,7 @@ export const BookingListView: React.FC<BookingListViewProps> = ({
 
       return matchText;
     });
-  }, [monthBookings, searchTerm, filterType]);
+  }, [monthBookings, searchTerm, filterType, statusFilter]);
 
   // Nhóm danh sách bookings theo ngày để phân chia khung màu xen kẽ (cho chế độ Mặc định)
   const groupedBookings = useMemo(() => {
@@ -591,6 +623,45 @@ export const BookingListView: React.FC<BookingListViewProps> = ({
               </span>
             </button>
           </div>
+        </div>
+
+        {/* Bộ lọc trạng thái: 6 lựa chọn kèm badge màu riêng biệt + Tất cả */}
+        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-1 mb-2 -mx-1 px-1">
+          <button
+            type="button"
+            id="filter-status-all"
+            onClick={() => setStatusFilter('all')}
+            className={`px-2.5 h-6.5 rounded-lg text-[11px] font-bold shrink-0 transition-all cursor-pointer flex items-center gap-1 border select-none active:scale-95 ${
+              statusFilter === 'all'
+                ? 'bg-[#1C1C1E] text-white dark:bg-white dark:text-[#1C1C1E] border-transparent shadow-2xs font-black'
+                : `${inputBg} ${textSecondary} ${cardBorder} hover:${textPrimary}`
+            }`}
+          >
+            <span>Tất cả</span>
+            <span className="opacity-75 font-mono text-[10px]">({statusCounts['all'] || 0})</span>
+          </button>
+
+          {BOOKING_STATUS_LIST.map((opt) => {
+            const isSelected = statusFilter === opt.key;
+            const badgeInfo = getStatusBadgeInfo(opt.key);
+            const count = statusCounts[opt.key] || 0;
+            return (
+              <button
+                key={opt.key}
+                type="button"
+                id={`filter-status-${opt.key}`}
+                onClick={() => setStatusFilter(isSelected ? 'all' : opt.key)}
+                className={`px-2.5 h-6.5 rounded-lg text-[11px] font-bold shrink-0 transition-all cursor-pointer flex items-center gap-1 border select-none active:scale-95 ${
+                  isSelected
+                    ? `${badgeInfo.badgeClass} ring-2 ring-current font-extrabold shadow-2xs`
+                    : `${inputBg} ${textSecondary} ${cardBorder} hover:${textPrimary}`
+                }`}
+              >
+                <span>{opt.label}</span>
+                <span className="opacity-75 font-mono text-[10px]">({count})</span>
+              </button>
+            );
+          })}
         </div>
 
         {/* Hàng 3: Ô tìm kiếm + Lựa chọn lọc sắp xếp (Mặc định / Ngày tạo / Ngày sửa) */}

@@ -136,6 +136,20 @@ export function getReminderLabel(option: ReminderOption): string {
   }
 }
 
+export interface StatusOption {
+  key: BookingStatus;
+  label: string;
+}
+
+export const BOOKING_STATUS_LIST: { key: BookingStatus; label: string }[] = [
+  { key: 'deposited', label: 'Đã cọc' },
+  { key: 'looking_ctv', label: 'Đang tìm CTV' },
+  { key: 'assigned_ctv', label: 'Đã giao CTV' },
+  { key: 'rescheduled', label: 'Dời lịch' },
+  { key: 'cancelled', label: 'Hủy' },
+  { key: 'completed', label: 'Hoàn thành' }
+];
+
 export function getStatusBadgeInfo(status: BookingStatus): {
   label: string;
   badgeClass: string;
@@ -143,35 +157,50 @@ export function getStatusBadgeInfo(status: BookingStatus): {
   colorHex: string;
 } {
   switch (status) {
+    case 'looking_ctv':
+      return {
+        label: 'Đang tìm CTV',
+        badgeClass: 'bg-[#FF9500]/12 text-[#FF9500] dark:bg-[#FF9500]/20 dark:text-[#FFB340] border border-[#FF9500]/40',
+        borderClass: 'border-[#FF9500]',
+        colorHex: '#FF9500'
+      };
+    case 'assigned_ctv':
     case 'assigned':
       return {
         label: 'Đã giao CTV',
-        badgeClass: 'bg-[#FFF9F2] text-[#FF9500] border border-[#FF9500]',
-        borderClass: 'border-[#FF9500]',
-        colorHex: '#FF9500'
+        badgeClass: 'bg-[#5856D6]/12 text-[#5856D6] dark:bg-[#5856D6]/20 dark:text-[#A78BFA] border border-[#5856D6]/40',
+        borderClass: 'border-[#5856D6]',
+        colorHex: '#5856D6'
+      };
+    case 'rescheduled':
+      return {
+        label: 'Dời lịch',
+        badgeClass: 'bg-[#FF2D55]/12 text-[#FF2D55] dark:bg-[#FF2D55]/20 dark:text-[#FB7185] border border-[#FF2D55]/40',
+        borderClass: 'border-[#FF2D55]',
+        colorHex: '#FF2D55'
+      };
+    case 'cancelled':
+      return {
+        label: 'Hủy',
+        badgeClass: 'bg-[#FF3B30]/12 text-[#FF3B30] dark:bg-[#FF3B30]/20 dark:text-[#F87171] border border-[#FF3B30]/40',
+        borderClass: 'border-[#FF3B30]',
+        colorHex: '#FF3B30'
       };
     case 'completed':
     case 'paid':
       return {
         label: 'Hoàn thành',
-        badgeClass: 'bg-[#F2FAF4] text-[#34C759] border border-[#34C759]',
+        badgeClass: 'bg-[#34C759]/12 text-[#34C759] dark:bg-[#34C759]/20 dark:text-[#4ADE80] border border-[#34C759]/40',
         borderClass: 'border-[#34C759]',
         colorHex: '#34C759'
-      };
-    case 'cancelled':
-      return {
-        label: 'Đã hủy',
-        badgeClass: 'bg-[#FFF2F2] text-[#FF3B30] border border-[#FF3B30]',
-        borderClass: 'border-[#FF3B30]',
-        colorHex: '#FF3B30'
       };
     case 'deposited':
     default:
       return {
-        label: 'Đã lên lịch',
-        badgeClass: 'bg-[#F2F2F7] text-[#1C1C1E] border border-[#D1D1D6]',
-        borderClass: 'border-[#1C1C1E]',
-        colorHex: '#1C1C1E'
+        label: 'Đã cọc',
+        badgeClass: 'bg-[#007AFF]/12 text-[#007AFF] dark:bg-[#007AFF]/20 dark:text-[#38BDF8] border border-[#007AFF]/40',
+        borderClass: 'border-[#007AFF]',
+        colorHex: '#007AFF'
       };
   }
 }
@@ -325,10 +354,14 @@ export function parseBookingTemplate(text: string): {
     }
   }
 
-  // 4. Số lượng người: 1 hoặc 2 hoặc 3
-  const qtyMatch = text.match(/(?:số\s*lượng(?:\s*người)?|số\s*người)\s*[:：\-]?\s*(\d+)/i);
-  if (qtyMatch) {
-    const qty = parseInt(qtyMatch[1], 10);
+  // 4. Số lượng người / khách: 1 hoặc 2 hoặc 3 (ví dụ: Số lượng khách: 2, 2 khách, Số lượng: 3, 3 người)
+  const qtyMatch1 = text.match(/(?:số\s*lượng(?:\s*khách|\s*người)?|số\s*khách|số\s*người|khách)\s*[:：\-]?\s*(\d+)/i);
+  const qtyMatch2 = text.match(/\b(\d+)\s*(?:khách|người)\b/i);
+  if (qtyMatch1 && qtyMatch1[1]) {
+    const qty = parseInt(qtyMatch1[1], 10);
+    if (!isNaN(qty) && qty > 0) result.quantity = qty;
+  } else if (qtyMatch2 && qtyMatch2[1]) {
+    const qty = parseInt(qtyMatch2[1], 10);
     if (!isNaN(qty) && qty > 0) result.quantity = qty;
   }
 

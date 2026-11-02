@@ -1,7 +1,7 @@
 import React from 'react';
 import { Booking } from '../../types';
 import { getStatusInfo, getReminderLabel, formatKCurrency, formatBookingCardDate } from '../../utils/formatters';
-import { Bell, AlertTriangle, Phone, User, Calendar, Check } from 'lucide-react';
+import { Bell, AlertTriangle, Phone, User, Users, Calendar, Check } from 'lucide-react';
 import { useTheme } from '../../contexts/ThemeContext';
 
 interface BookingCardProps {
@@ -200,6 +200,12 @@ export const BookingCard: React.FC<BookingCardProps> = ({
             }`}>
               {formatKCurrency(booking.price || booking.totalAmount || 350000)}
             </span>
+            {(booking.customerCount || booking.quantity || 1) > 1 && (
+              <span className="inline-flex items-center gap-0.5 text-[9.5px] px-1.5 py-0.5 rounded-full font-bold bg-[#0091FF]/12 text-[#0091FF] dark:text-[#38BDF8] border border-[#0091FF]/30">
+                <Users className="w-2.5 h-2.5" />
+                <span>{booking.customerCount || booking.quantity} khách</span>
+              </span>
+            )}
             {hasConflict && (
               <span className="flex items-center gap-0.5 text-[9px] bg-[#FFF2F2] text-[#FF3B30] px-1 py-0.5 rounded border border-[#FF3B30] font-semibold animate-pulse">
                 <AlertTriangle className="w-2.5 h-2.5" />
@@ -212,13 +218,9 @@ export const BookingCard: React.FC<BookingCardProps> = ({
                 <span>Hoàn thành</span>
               </span>
             ) : (
-              <span className={`text-[9.5px] px-1.5 py-0.5 rounded-full font-semibold ${
-                booking.performerType === 'ctv'
-                  ? 'bg-[#FF9500]/15 text-[#FF9500] border border-[#FF9500]/40'
-                  : 'bg-[#007AFF]/15 text-[#007AFF] dark:text-[#0A84FF] border border-[#007AFF]/40'
-              }`}>
-                {booking.performerType === 'ctv' && booking.status === 'assigned'
-                  ? `CTV ${booking.ctvNameSnapshot || 'Linh'}`
+              <span className={`text-[9.5px] px-1.5 py-0.5 rounded-full font-semibold ${statusInfo.badgeClass}`}>
+                {booking.performerType === 'ctv' && (booking.status === 'assigned' || booking.status === 'assigned_ctv') && booking.ctvNameSnapshot
+                  ? `CTV ${booking.ctvNameSnapshot}`
                   : statusInfo.label}
               </span>
             )}

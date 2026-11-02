@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { Booking, CTV, MakeupPackage, ReminderOption, PerformerType } from '../../types';
+import { Booking, CTV, MakeupPackage, ReminderOption, PerformerType, BookingStatus } from '../../types';
 import { findCTVConflicts } from '../../services/conflictService';
 import {
   getBookingDisplayTitle,
@@ -9,7 +9,8 @@ import {
   timeToMinutes,
   formatCurrency,
   extractVietnamesePhoneNumber,
-  parseBookingTemplate
+  parseBookingTemplate,
+  BOOKING_STATUS_LIST
 } from '../../utils/formatters';
 import { IOSWheelTimePicker } from './IOSWheelTimePicker';
 import { InlineDatePicker } from './InlineDatePicker';
@@ -30,7 +31,8 @@ import {
   Minus,
   Plus,
   Clipboard,
-  User
+  User,
+  Users
 } from 'lucide-react';
 
 interface BookingFormModalProps {
@@ -66,6 +68,12 @@ export const BookingFormModal: React.FC<BookingFormModalProps> = ({
   const [customerName, setCustomerName] = useState('');
   const [makeupInfo, setMakeupInfo] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Số lượng khách (mặc định 1)
+  const [customerCount, setCustomerCount] = useState<number>(1);
+
+  // Trạng thái lịch hẹn (mặc định 'deposited' - Đã cọc)
+  const [status, setStatus] = useState<BookingStatus>('deposited');
 
   const adjustTextareaHeight = useCallback(() => {
     const el = textareaRef.current;
@@ -168,9 +176,9 @@ export const BookingFormModal: React.FC<BookingFormModalProps> = ({
     }
     adjustTextareaHeight();
 
-    // Tự động nhận diện thời gian, ngày & tên nếu người dùng dán theo mẫu
+    // Tự động nhận diện thời gian, ngày, tên & số lượng khách nếu người dùng dán hoặc nhập theo mẫu
+    const parsed = parseBookingTemplate(val);
     if (!editBooking) {
-      const parsed = parseBookingTemplate(val);
       if (parsed.time) {
         setStartTime(parsed.time);
       }
@@ -180,6 +188,10 @@ export const BookingFormModal: React.FC<BookingFormModalProps> = ({
       if (parsed.name && !customerName.trim()) {
         setCustomerName(parsed.name);
       }
+    }
+    // Cập nhật số lượng khách theo thông tin chi tiết
+    if (parsed.quantity && parsed.quantity > 0) {
+      setCustomerCount(parsed.quantity);
     }
   };
 
@@ -317,6 +329,13 @@ export const BookingFormModal: React.FC<BookingFormModalProps> = ({
       setCtvId(editBooking.ctvId || ctvs[0]?.id || '');
       setReminder(editBooking.reminder || '30_mins');
       setNote(editBooking.note || '');
+
+      // Customer count & Status
+      const initialCount = editBooking.customerCount || editBooking.quantity || 1;
+      setCustomerCount(initialCount);
+      const rawStatus = editBooking.status || (editBooking.performerType === 'ctv' ? 'assigned_ctv' : 'deposited');
+      const normalizedStatus = rawStatus === 'assigned' ? 'assigned_ctv' : rawStatus === 'paid' ? 'completed' : rawStatus;
+      setStatus(normalizedStatus as BookingStatus);
     } else {
       setCustomerName('');
       setMakeupInfo('');
@@ -330,6 +349,8 @@ export const BookingFormModal: React.FC<BookingFormModalProps> = ({
       setCtvId(ctvs[0]?.id || '');
       setReminder('30_mins');
       setNote('');
+      setCustomerCount(1);
+      setStatus('deposited');
     }
     setIsWheelPickerOpen(false);
     setErrors({});
@@ -442,7 +463,8 @@ export const BookingFormModal: React.FC<BookingFormModalProps> = ({
       customerName: resolvedCustomerName,
       customerPhone,
       customerAddress,
-      quantity,
+      quantity: customerCount,
+      customerCount,
 
       packageId: editBooking?.packageId || '',
       packageNameSnapshot: editBooking?.packageNameSnapshot || 'Makeup',
@@ -459,7 +481,7 @@ export const BookingFormModal: React.FC<BookingFormModalProps> = ({
 
       reminder,
       note: note.trim(),
-      status: editBooking?.status || (performerType === 'ctv' ? 'assigned' : 'deposited'),
+      status,
 
       createdAt: editBooking?.createdAt || Date.now(),
       updatedAt: Date.now()
@@ -599,6 +621,51 @@ export const BookingFormModal: React.FC<BookingFormModalProps> = ({
             {errors.makeupInfo && (
               <p className="text-[11px] text-[#FF3B30] font-medium">{errors.makeupInfo}</p>
             )}
+          </div>
+
+          {/* ============================================================ */}
+          {/* SỐ LƯỢNG KHÁCH (Khớp mẫu image_3ca73276.png)                 */}
+          {/* ============================================================ */}
+          <div className={`${cardBg} px-3.5 py-2.5 rounded-xl border ${cardBorder} shadow-xs flex items-center justify-between`}>
+            <div className="flex items-center gap-2">
+              <Users className="w-4.5 h-4.5 text-[#0091FF]" />
+              <span className={`text-[13.5px] font-bold ${textPrimary}`}>
+                Số lượng khách
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2">
+              {/* Nút Giảm - */}
+              <button
+                id="btn-customer-count-decrease"
+                type="button"
+                onClick={() => setCustomerCount((prev) => Math.max(1, prev - 1))}
+                disabled={customerCount <= 1}
+                aria-label="Giảm số lượng khách"
+                className={`w-8 h-8 rounded-lg flex items-center justify-center border ${cardBorder} ${inputBg} ${textPrimary} hover:opacity-80 active:scale-95 disabled:opacity-30 disabled:pointer-events-none transition-all cursor-pointer shadow-2xs`}
+              >
+                <Minus className="w-3.5 h-3.5 stroke-[2.5]" />
+              </button>
+
+              {/* Badge X khách */}
+              <div
+                id="display-customer-count"
+                className="px-3.5 h-8 rounded-lg bg-[#E6F4FE] dark:bg-[#0091FF]/20 text-[#0091FF] dark:text-[#38BDF8] font-bold text-[13.5px] flex items-center justify-center select-none shadow-2xs"
+              >
+                {customerCount} khách
+              </div>
+
+              {/* Nút Tăng + */}
+              <button
+                id="btn-customer-count-increase"
+                type="button"
+                onClick={() => setCustomerCount((prev) => prev + 1)}
+                aria-label="Tăng số lượng khách"
+                className={`w-8 h-8 rounded-lg flex items-center justify-center border ${cardBorder} ${inputBg} ${textPrimary} hover:opacity-80 active:scale-95 transition-all cursor-pointer shadow-2xs`}
+              >
+                <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
+              </button>
+            </div>
           </div>
 
           {/* ============================================================ */}
@@ -1018,6 +1085,36 @@ export const BookingFormModal: React.FC<BookingFormModalProps> = ({
                 )}
               </div>
             )}
+          </div>
+
+          {/* ============================================================ */}
+          {/* TRẠNG THÁI LỊCH HẸN (Khớp mẫu image_54e59e70.png)           */}
+          {/* ============================================================ */}
+          <div className={`${cardBg} px-3.5 py-3 rounded-xl border ${cardBorder} shadow-xs space-y-2`}>
+            <label className={`text-[13px] font-bold ${textSecondary} block`}>
+              Trạng thái lịch hẹn
+            </label>
+            <div className="grid grid-cols-3 gap-2">
+              {BOOKING_STATUS_LIST.map((opt) => {
+                const isSelected = status === opt.key;
+                return (
+                  <button
+                    key={opt.key}
+                    type="button"
+                    id={`status-opt-${opt.key}`}
+                    onClick={() => setStatus(opt.key)}
+                    className={`h-10 px-1 rounded-xl text-[13px] font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer select-none active:scale-95 ${
+                      isSelected
+                        ? 'bg-[#5856D6] text-white shadow-xs'
+                        : `${inputBg} ${textPrimary} border ${cardBorder} hover:opacity-85`
+                    }`}
+                  >
+                    {isSelected && <Check className="w-3.5 h-3.5 stroke-[3] shrink-0" />}
+                    <span className="truncate">{opt.label}</span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           {/* ============================================================ */}

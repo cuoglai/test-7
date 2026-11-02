@@ -1,7 +1,32 @@
 import React, { useState } from 'react';
 import { Booking } from '../../types';
-import { getReminderLabel, getStatusBadgeInfo, getBookingDisplayTitle, getBookingMakeupInfo, formatDate, formatKCurrency } from '../../utils/formatters';
-import { X, Phone, User, Calendar, Clock, CheckCircle, Edit3, Trash2, Bell, AlertTriangle, FileText, Copy, Check, Coins } from 'lucide-react';
+import {
+  getReminderLabel,
+  getStatusBadgeInfo,
+  getBookingDisplayTitle,
+  getBookingMakeupInfo,
+  formatDate,
+  formatKCurrency,
+  BOOKING_STATUS_LIST
+} from '../../utils/formatters';
+import {
+  X,
+  Phone,
+  User,
+  Users,
+  Calendar,
+  Clock,
+  Edit3,
+  Trash2,
+  Bell,
+  AlertTriangle,
+  FileText,
+  Copy,
+  Check,
+  Coins,
+  Minus,
+  Plus
+} from 'lucide-react';
 import { ConfirmDialog } from '../ui/ConfirmDialog';
 import { useTheme } from '../../contexts/ThemeContext';
 
@@ -12,6 +37,7 @@ interface BookingDetailModalProps {
   onEdit: (booking: Booking) => void;
   onDelete: (id: string) => void;
   onMarkStatus: (id: string, status: Booking['status']) => void;
+  onUpdateBooking?: (booking: Booking) => void;
 }
 
 export const BookingDetailModal: React.FC<BookingDetailModalProps> = ({
@@ -20,7 +46,8 @@ export const BookingDetailModal: React.FC<BookingDetailModalProps> = ({
   onClose,
   onEdit,
   onDelete,
-  onMarkStatus
+  onMarkStatus,
+  onUpdateBooking
 }) => {
   const { isDark, accentConfig } = useTheme();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -119,6 +146,62 @@ export const BookingDetailModal: React.FC<BookingDetailModalProps> = ({
               <h2 className={`text-[17px] font-bold ${textPrimary}`}>
                 {booking.customerName || 'Khách makeup'}
               </h2>
+            </div>
+
+            {/* Số lượng khách (Khớp mẫu image_3ca73276.png) */}
+            <div className={`${cardBg} px-3.5 py-2.5 rounded-2xl border ${cardBorder} flex items-center justify-between shadow-2xs`}>
+              <div className="flex items-center gap-2">
+                <Users className="w-4.5 h-4.5 text-[#0091FF]" />
+                <span className={`text-[13.5px] font-bold ${textPrimary}`}>
+                  Số lượng khách
+                </span>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  id="detail-count-decrease"
+                  onClick={() => {
+                    const current = booking.customerCount || booking.quantity || 1;
+                    if (current > 1 && onUpdateBooking) {
+                      onUpdateBooking({
+                        ...booking,
+                        quantity: current - 1,
+                        customerCount: current - 1
+                      });
+                    }
+                  }}
+                  disabled={(booking.customerCount || booking.quantity || 1) <= 1 || !onUpdateBooking}
+                  aria-label="Giảm số lượng khách"
+                  className={`w-8 h-8 rounded-lg flex items-center justify-center border ${cardBorder} ${inputBg} ${textPrimary} hover:opacity-80 active:scale-95 disabled:opacity-30 disabled:pointer-events-none transition-all cursor-pointer shadow-2xs`}
+                >
+                  <Minus className="w-3.5 h-3.5 stroke-[2.5]" />
+                </button>
+
+                <div className="px-3.5 h-8 rounded-lg bg-[#E6F4FE] dark:bg-[#0091FF]/20 text-[#0091FF] dark:text-[#38BDF8] font-bold text-[13.5px] flex items-center justify-center select-none shadow-2xs">
+                  {booking.customerCount || booking.quantity || 1} khách
+                </div>
+
+                <button
+                  type="button"
+                  id="detail-count-increase"
+                  onClick={() => {
+                    const current = booking.customerCount || booking.quantity || 1;
+                    if (onUpdateBooking) {
+                      onUpdateBooking({
+                        ...booking,
+                        quantity: current + 1,
+                        customerCount: current + 1
+                      });
+                    }
+                  }}
+                  disabled={!onUpdateBooking}
+                  aria-label="Tăng số lượng khách"
+                  className={`w-8 h-8 rounded-lg flex items-center justify-center border ${cardBorder} ${inputBg} ${textPrimary} hover:opacity-80 active:scale-95 disabled:opacity-30 disabled:pointer-events-none transition-all cursor-pointer shadow-2xs`}
+                >
+                  <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
+                </button>
+              </div>
             </div>
 
             {/* 3. Thông tin chi tiết */}
@@ -224,32 +307,40 @@ export const BookingDetailModal: React.FC<BookingDetailModalProps> = ({
           </div>
 
           {/* Bottom Action Footer */}
-          <div className={`p-4 border-t ${cardBorder} ${cardBg} space-y-2`}>
-            {/* Status toggle button */}
-            {booking.status !== 'completed' ? (
-              <button
-                id="mark-completed-btn"
-                type="button"
-                onClick={() => {
-                  onMarkStatus(booking.id, 'completed');
-                  onClose();
-                }}
-                className="w-full py-3 px-3 rounded-xl bg-[#34C759] text-white font-bold text-[14px] flex items-center justify-center gap-2 shadow-xs hover:bg-[#2DB04E] active:scale-98 transition-all cursor-pointer"
-              >
-                <CheckCircle className="w-4 h-4" />
-                Đánh dấu đã hoàn thành ca make
-              </button>
-            ) : (
-              <button
-                id="mark-active-btn"
-                type="button"
-                onClick={() => onMarkStatus(booking.id, 'deposited')}
-                className={`w-full py-2.5 px-3 rounded-xl ${inputBg} ${textPrimary} font-semibold text-[13px] flex items-center justify-center gap-1.5 active:scale-98 transition-all cursor-pointer`}
-              >
-                <CheckCircle className="w-4 h-4 text-[#34C759]" />
-                Đã hoàn thành (Chạm để chuyển lại Đang lịch)
-              </button>
-            )}
+          <div className={`p-4 border-t ${cardBorder} ${cardBg} space-y-2.5`}>
+            {/* Trạng thái lịch hẹn: 6 lựa chọn (Khớp mẫu image_54e59e70.png) */}
+            <div className="space-y-1.5">
+              <span className={`text-[12.5px] font-bold ${textSecondary} block`}>
+                Trạng thái lịch hẹn
+              </span>
+              <div className="grid grid-cols-3 gap-2">
+                {BOOKING_STATUS_LIST.map((opt) => {
+                  const currentStatus =
+                    booking.status === 'assigned'
+                      ? 'assigned_ctv'
+                      : booking.status === 'paid'
+                      ? 'completed'
+                      : booking.status;
+                  const isSelected = currentStatus === opt.key;
+                  return (
+                    <button
+                      key={opt.key}
+                      type="button"
+                      id={`detail-status-opt-${opt.key}`}
+                      onClick={() => onMarkStatus(booking.id, opt.key)}
+                      className={`h-9.5 px-1 rounded-xl text-[12.5px] font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer select-none active:scale-95 ${
+                        isSelected
+                          ? 'bg-[#5856D6] text-white shadow-xs'
+                          : `${inputBg} ${textPrimary} border ${cardBorder} hover:opacity-85`
+                      }`}
+                    >
+                      {isSelected && <Check className="w-3.5 h-3.5 stroke-[3] shrink-0" />}
+                      <span className="truncate">{opt.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
 
             <div className="flex items-center gap-2 pt-1">
               <button

@@ -21,6 +21,10 @@ export const getBookingRevenue = (b: Booking): number => {
   return 350000;
 };
 
+export const getBookingCustomerCount = (b: Booking): number => {
+  return b.customerCount || b.quantity || 1;
+};
+
 const WEEKDAY_NAMES = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
 
 export const RevenueView: React.FC<RevenueViewProps> = ({
@@ -123,6 +127,10 @@ export const RevenueView: React.FC<RevenueViewProps> = ({
 
   const totalMonthBookingsCount = monthBookings.length;
 
+  const totalMonthCustomersCount = useMemo(() => {
+    return monthBookings.reduce((sum, b) => sum + getBookingCustomerCount(b), 0);
+  }, [monthBookings]);
+
   // Days in month calculation
   const daysInMonth = useMemo(() => {
     return new Date(year, month, 0).getDate();
@@ -144,6 +152,10 @@ export const RevenueView: React.FC<RevenueViewProps> = ({
 
   const selectedDayRevenue = useMemo(() => {
     return selectedDayBookings.reduce((sum, b) => sum + getBookingRevenue(b), 0);
+  }, [selectedDayBookings]);
+
+  const selectedDayCustomersCount = useMemo(() => {
+    return selectedDayBookings.reduce((sum, b) => sum + getBookingCustomerCount(b), 0);
   }, [selectedDayBookings]);
 
   // Formatted date label for selected day: DD/MM
@@ -175,6 +187,10 @@ export const RevenueView: React.FC<RevenueViewProps> = ({
 
   const totalCTVMonthBookingsCount = completedMonthCTVBookings.length;
 
+  const totalCTVMonthCustomersCount = useMemo(() => {
+    return completedMonthCTVBookings.reduce((sum, b) => sum + getBookingCustomerCount(b), 0);
+  }, [completedMonthCTVBookings]);
+
   const ctvMonthlyStats = useMemo(() => {
     const map = new Map<
       string,
@@ -185,6 +201,7 @@ export const RevenueView: React.FC<RevenueViewProps> = ({
         bookings: Booking[];
         totalRevenue: number;
         totalCount: number;
+        totalCustomers: number;
       }
     >();
 
@@ -196,7 +213,8 @@ export const RevenueView: React.FC<RevenueViewProps> = ({
         phone: c.phone,
         bookings: [],
         totalRevenue: 0,
-        totalCount: 0
+        totalCount: 0,
+        totalCustomers: 0
       });
     });
 
@@ -234,7 +252,8 @@ export const RevenueView: React.FC<RevenueViewProps> = ({
           phone,
           bookings: [],
           totalRevenue: 0,
-          totalCount: 0
+          totalCount: 0,
+          totalCustomers: 0
         });
       }
 
@@ -242,6 +261,7 @@ export const RevenueView: React.FC<RevenueViewProps> = ({
       item.bookings.push(b);
       item.totalRevenue += getBookingRevenue(b);
       item.totalCount += 1;
+      item.totalCustomers += getBookingCustomerCount(b);
     });
 
     // Sắp xếp các ca của từng CTV theo ngày và giờ tăng dần
@@ -344,7 +364,7 @@ export const RevenueView: React.FC<RevenueViewProps> = ({
           <div className="flex items-center gap-1.5 shrink-0 ml-2">
             <span className={`text-[11px] font-medium ${textSecondary}`}>Tổng:</span>
             <span className={`text-[12px] font-bold ${textPrimary} font-mono px-2 py-0.5 rounded-md bg-black/5 dark:bg-white/5`}>
-              {totalMonthBookingsCount} ca
+              {totalMonthBookingsCount} ca • {totalMonthCustomersCount} khách
             </span>
           </div>
         </div>
@@ -554,8 +574,8 @@ export const RevenueView: React.FC<RevenueViewProps> = ({
                     ({formatCurrency(selectedDayRevenue)})
                   </span>
                 )}
-                <span className={`text-[14px] font-bold ${textSecondary}`}>
-                  · {selectedDayBookings.length} ca
+                <span className={`text-[13px] sm:text-[14px] font-bold ${textSecondary}`}>
+                  · {selectedDayBookings.length} ca • {selectedDayCustomersCount} khách
                 </span>
               </div>
             </div>
@@ -591,6 +611,7 @@ export const RevenueView: React.FC<RevenueViewProps> = ({
               {selectedDayBookings.map((b) => {
                 const bRev = getBookingRevenue(b);
                 const title = getBookingDisplayTitle(b);
+                const bCustCount = getBookingCustomerCount(b);
 
                 return (
                   <div
@@ -604,12 +625,17 @@ export const RevenueView: React.FC<RevenueViewProps> = ({
                         {title}
                       </p>
 
-                      {/* Time */}
-                      <div className={`flex items-center gap-1.5 text-[12px] font-medium ${textSecondary}`}>
-                        <Clock className="w-3.5 h-3.5" />
-                        <span>
-                          {b.startTime}
-                        </span>
+                      {/* Time & Customer Count */}
+                      <div className={`flex items-center gap-2 text-[12px] font-medium ${textSecondary}`}>
+                        <div className="flex items-center gap-1">
+                          <Clock className="w-3.5 h-3.5" />
+                          <span>{b.startTime}</span>
+                        </div>
+                        <span className="opacity-40">•</span>
+                        <div className="flex items-center gap-1 font-semibold text-[#007AFF] dark:text-[#0A84FF]">
+                          <Users className="w-3.5 h-3.5" />
+                          <span>{bCustCount} khách</span>
+                        </div>
                       </div>
 
                       {/* Performer */}
@@ -670,7 +696,7 @@ export const RevenueView: React.FC<RevenueViewProps> = ({
                   {formatCurrency(totalCTVMonthRevenue)}
                 </span>
                 <span className="text-[11px] font-semibold text-[#FF9500]">
-                  {totalCTVMonthBookingsCount} ca hoàn thành
+                  {totalCTVMonthBookingsCount} ca • {totalCTVMonthCustomersCount} khách
                 </span>
               </div>
             </div>
@@ -723,7 +749,7 @@ export const RevenueView: React.FC<RevenueViewProps> = ({
                                   hasBookings ? 'text-[#FF9500]' : textSecondary
                                 }`}
                               >
-                                {ctv.totalCount} ca hoàn thành
+                                {hasBookings ? `${ctv.totalCount} ca • ${ctv.totalCustomers} khách` : 'Chưa có ca'}
                               </span>
                             </div>
                           </div>
@@ -767,6 +793,7 @@ export const RevenueView: React.FC<RevenueViewProps> = ({
                               const title = getBookingDisplayTitle(b);
                               const [y, m, d] = (b.date || '').split('-');
                               const formattedDate = d && m ? `${d}/${m}` : b.date;
+                              const bCustCount = getBookingCustomerCount(b);
 
                               return (
                                 <div
@@ -783,6 +810,10 @@ export const RevenueView: React.FC<RevenueViewProps> = ({
                                       </span>
                                       <span className={`font-medium ${textSecondary}`}>
                                         {b.startTime}
+                                      </span>
+                                      <span className="font-medium text-[#007AFF] dark:text-[#0A84FF] flex items-center gap-0.5">
+                                        <Users className="w-3 h-3" />
+                                        {bCustCount} khách
                                       </span>
                                       {b.packageNameSnapshot && (
                                         <span className={`truncate ${textSecondary} max-w-[120px]`}>
@@ -831,7 +862,7 @@ export const RevenueView: React.FC<RevenueViewProps> = ({
                   Xem doanh thu của từng CTV tháng {String(month).padStart(2, '0')}/{year}
                 </span>
                 <span className={`text-[11px] ${textSecondary}`}>
-                  Tổng CTV: {formatCurrency(totalCTVMonthRevenue)} ({totalCTVMonthBookingsCount} ca)
+                  Tổng CTV: {formatCurrency(totalCTVMonthRevenue)} ({totalCTVMonthBookingsCount} ca • {totalCTVMonthCustomersCount} khách)
                 </span>
               </div>
             </div>

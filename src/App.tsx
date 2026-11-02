@@ -257,6 +257,7 @@ function AppContent() {
           onEdit={handleEditBooking}
           onDelete={handleDeleteBooking}
           onMarkStatus={handleStatusChange}
+          onUpdateBooking={handleSaveBooking}
         />
 
         {/* Booking Add / Edit Form Modal */}
